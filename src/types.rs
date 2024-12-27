@@ -1,3 +1,26 @@
+use std::path::PathBuf;
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct PackageMetadata {
+    pub name: String,
+    pub version: String,
+    pub documentation: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SourceFile {
+    pub path: PathBuf,
+    pub content: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ApiDefinitions {
+    pub functions: Vec<String>,
+    pub structs: Vec<String>,
+    pub enums: Vec<String>,
+    pub traits: Vec<String>,
+}
+
 /// Structure representing library information
 #[derive(Debug)]
 pub struct LibraryInfo {

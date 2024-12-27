@@ -1,8 +1,7 @@
 //! Main library module for generating library API documentation.
 
+pub mod analysers;
 pub mod error;
-pub mod generator;
-pub mod parser;
 pub mod types;
 
 use error::LaibraryError;
@@ -18,7 +17,9 @@ use std::path::Path;
 ///
 /// Returns a Result containing the generated pseudo-XML string or an error
 pub fn generate_library_api(crate_path: &Path) -> Result<String, LaibraryError> {
-    let parser = parser::get_parser("rust")?;
-    let library_info = parser.parse(crate_path)?;
-    Ok(generator::generate_output(&library_info))
+    let analyser = analysers::get_analyser("rust")?;
+    let metadata = analyser.extract_metadata(crate_path)?;
+    let sources = analyser.parse_source(crate_path)?;
+    let api = analyser.extract_public_api(&sources)?;
+    analyser.generate_documentation(&metadata, &api)
 }
