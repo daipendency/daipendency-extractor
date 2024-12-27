@@ -1,0 +1,40 @@
+use std::error::Error;
+use std::fmt;
+
+/// Custom error type for laibrary operations
+#[derive(Debug)]
+pub enum LaibraryError {
+    /// I/O related errors
+    Io(std::io::Error),
+    /// Parsing related errors
+    Parse(String),
+    /// Unsupported language errors
+    UnsupportedLanguage(String),
+}
+
+impl fmt::Display for LaibraryError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            LaibraryError::Io(e) => write!(f, "I/O Error: {}", e),
+            LaibraryError::Parse(msg) => write!(f, "Parse Error: {}", msg),
+            LaibraryError::UnsupportedLanguage(lang) => {
+                write!(f, "Unsupported language: {}", lang)
+            }
+        }
+    }
+}
+
+impl Error for LaibraryError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            LaibraryError::Io(e) => Some(e),
+            _ => None,
+        }
+    }
+}
+
+impl From<std::io::Error> for LaibraryError {
+    fn from(error: std::io::Error) -> Self {
+        LaibraryError::Io(error)
+    }
+}

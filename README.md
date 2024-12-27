@@ -1,6 +1,31 @@
 # laibrary
 
-Generate context for LLMs to work reliably with library APIs.
+**laibrary** extracts public APIs and documentation from external libraries and outputs them in a structured pseudo-XML format suitable for use with language models.
+
+## Usage
+
+To run the CLI tool:
+
+```sh
+cargo run -- /path/to/rust-crate
+```
+
+This will output the public API and documentation of the specified Rust crate.
+
+## Library Integration
+
+You can also use **laibrary** as a library in your Rust projects:
+
+```rust
+use laibrary::generate_library_api;
+use std::path::Path;
+
+let path = Path::new("/path/to/rust-crate");
+match generate_library_api(&path) {
+    Ok(output) => println!("{}", output),
+    Err(e) => eprintln!("Error: {}", e),
+}
+```
 
 ## Input Sources
 
@@ -42,3 +67,7 @@ Generate context for LLMs to work reliably with library APIs.
     </examples>
 </library>
 ```
+
+## Future Plans
+
+Whilst currently supporting Rust only, the codebase is designed to be modular and extensible. Support for additional languages like TypeScript is planned.
