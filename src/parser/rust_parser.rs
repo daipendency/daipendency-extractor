@@ -55,7 +55,7 @@ impl ParserTrait for RustParser {
         for file_path in rs_files {
             let source_code = fs::read_to_string(&file_path)
                 .map_err(|e| LaibraryError::Parse(format!("Failed to read source file: {}", e)))?;
-            
+
             // Skip empty files
             if source_code.trim().is_empty() {
                 continue;
@@ -89,12 +89,18 @@ impl ParserTrait for RustParser {
 /// Recursively collect all .rs files in a directory
 fn collect_rs_files(dir: &Path) -> Result<Vec<PathBuf>, LaibraryError> {
     if !dir.exists() {
-        return Err(LaibraryError::Parse(format!("Directory does not exist: {}", dir.display())));
+        return Err(LaibraryError::Parse(format!(
+            "Directory does not exist: {}",
+            dir.display()
+        )));
     }
 
     let mut files = Vec::new();
-    for entry in fs::read_dir(dir).map_err(|e| LaibraryError::Parse(format!("Failed to read directory: {}", e)))? {
-        let entry = entry.map_err(|e| LaibraryError::Parse(format!("Failed to read directory entry: {}", e)))?;
+    for entry in fs::read_dir(dir)
+        .map_err(|e| LaibraryError::Parse(format!("Failed to read directory: {}", e)))?
+    {
+        let entry = entry
+            .map_err(|e| LaibraryError::Parse(format!("Failed to read directory entry: {}", e)))?;
         let path = entry.path();
         if path.is_dir() {
             files.extend(collect_rs_files(&path)?);
@@ -114,16 +120,76 @@ fn extract_public_api(node: Node, source_code: &str) -> Result<String, LaibraryE
         match child.kind() {
             "function_item" | "struct_item" | "enum_item" | "trait_item" | "mod_item" => {
                 if is_public(&child, source_code) {
-                    match child.utf8_text(source_code.as_bytes()) {
-                        Ok(text) => {
+                    if child.kind() == "function_item" {
+                        // For functions, only extract the signature
+                        let mut sig_cursor = child.walk();
+                        let mut signature = String::new();
+                        let mut in_return_type = false;
+
+                        // Build the signature
+                        for part in child.children(&mut sig_cursor) {
+                            match part.kind() {
+                                "visibility_modifier" => {
+                                    if let Ok(text) = part.utf8_text(source_code.as_bytes()) {
+                                        signature.push_str(text);
+                                        signature.push(' ');
+                                    }
+                                }
+                                "fn" => {
+                                    signature.push_str("fn ");
+                                }
+                                "identifier" => {
+                                    if let Ok(text) = part.utf8_text(source_code.as_bytes()) {
+                                        signature.push_str(text);
+                                    }
+                                }
+                                "type_parameters" => {
+                                    if let Ok(text) = part.utf8_text(source_code.as_bytes()) {
+                                        signature.push_str(text);
+                                    }
+                                }
+                                "parameters" => {
+                                    if let Ok(text) = part.utf8_text(source_code.as_bytes()) {
+                                        signature.push_str(text);
+                                    }
+                                }
+                                "->" => {
+                                    in_return_type = true;
+                                    signature.push_str(" -> ");
+                                }
+                                "block" => {
+                                    // Stop when we hit the function body
+                                    break;
+                                }
+                                "where" => {
+                                    signature.push_str("where");
+                                }
+                                _ if in_return_type => {
+                                    // For return type, include everything after the arrow until the block
+                                    if let Ok(text) = part.utf8_text(source_code.as_bytes()) {
+                                        let text = text.trim_end_matches(',');
+                                        signature.push_str(text);
+                                    }
+                                }
+                                _ => {}
+                            }
+                        }
+
+                        if !signature.is_empty() {
+                            if !in_return_type {
+                                signature.push_str(" -> ()");
+                            }
+                            // Fix spacing around where clause
+                            signature = signature.replace("where", " where");
+                            signature = signature.replace("  where", " where");
+                            signature.push_str(";\n\n");
+                            api.push_str(&signature);
+                        }
+                    } else {
+                        // For other items, include the full definition
+                        if let Ok(text) = child.utf8_text(source_code.as_bytes()) {
                             api.push_str(text);
                             api.push_str("\n\n");
-                        }
-                        Err(e) => {
-                            return Err(LaibraryError::Parse(format!(
-                                "Failed to extract API text: {}",
-                                e
-                            )));
                         }
                     }
                 }
@@ -215,7 +281,7 @@ pub fn test_function() {}
     fn test_invalid_cargo_toml() {
         let temp_dir = TempDir::new().unwrap();
         fs::write(temp_dir.path().join("Cargo.toml"), "invalid toml content").unwrap();
-        
+
         let parser = RustParser;
         let result = parser.parse(temp_dir.path());
         assert!(matches!(result, Err(LaibraryError::Parse(_))));
@@ -224,8 +290,12 @@ pub fn test_function() {}
     #[test]
     fn test_missing_package_section() {
         let temp_dir = TempDir::new().unwrap();
-        fs::write(temp_dir.path().join("Cargo.toml"), "[dependencies]\nfoo = \"1.0\"").unwrap();
-        
+        fs::write(
+            temp_dir.path().join("Cargo.toml"),
+            "[dependencies]\nfoo = \"1.0\"",
+        )
+        .unwrap();
+
         let parser = RustParser;
         let result = parser.parse(temp_dir.path());
         assert!(matches!(result, Err(LaibraryError::Parse(_))));
@@ -247,7 +317,7 @@ pub fn test_function() {}
     fn test_invalid_utf8_in_source() {
         let temp_dir = TempDir::new().unwrap();
         create_test_crate(temp_dir.path()).unwrap();
-        
+
         let mut file = File::create(temp_dir.path().join("src").join("invalid.rs")).unwrap();
         file.write_all(b"pub fn test() -> String {\n    let bytes = b\"\\xFF\\xFF\";\n    String::from_utf8_lossy(bytes).to_string()\n}\n").unwrap();
 
@@ -265,7 +335,8 @@ pub fn test_function() {}
 name = "test-crate"
 version = "0.1.0"
 "#,
-        ).unwrap();
+        )
+        .unwrap();
 
         let parser = RustParser;
         let result = parser.parse(temp_dir.path());
@@ -281,5 +352,139 @@ version = "0.1.0"
         let parser = RustParser;
         let result = parser.parse(temp_dir.path());
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_function_signature_only() {
+        let temp_dir = TempDir::new().unwrap();
+        let src_dir = temp_dir.path().join("src");
+        fs::create_dir(&src_dir).unwrap();
+
+        // Create Cargo.toml
+        fs::write(
+            temp_dir.path().join("Cargo.toml"),
+            r#"[package]
+name = "test-crate"
+version = "0.1.0"
+"#,
+        )
+        .unwrap();
+
+        // Create lib.rs with a function that has a body
+        fs::write(
+            src_dir.join("lib.rs"),
+            r#"
+pub fn test_function(input: &str) -> String {
+    input.to_uppercase()
+}
+"#,
+        )
+        .unwrap();
+
+        let parser = RustParser;
+        let result = parser.parse(temp_dir.path());
+        assert!(result.is_ok());
+
+        let info = result.unwrap();
+        println!("Generated API:\n{}", info.api); // Debug output
+        assert!(info
+            .api
+            .contains("pub fn test_function(input: &str) -> String;"));
+        assert!(!info.api.contains("input.to_uppercase()"));
+    }
+
+    #[test]
+    fn test_complex_function_signature() {
+        let temp_dir = TempDir::new().unwrap();
+        let src_dir = temp_dir.path().join("src");
+        fs::create_dir(&src_dir).unwrap();
+
+        // Create Cargo.toml
+        fs::write(
+            temp_dir.path().join("Cargo.toml"),
+            r#"[package]
+name = "test-crate"
+version = "0.1.0"
+"#,
+        )
+        .unwrap();
+
+        // Create lib.rs with a function that has multiple parameters
+        fs::write(
+            src_dir.join("lib.rs"),
+            r#"
+pub fn complex_function(x: i32, y: &str, z: Option<Vec<String>>) -> Result<String, Box<dyn std::error::Error>> {
+    Ok(format!("{}{:?}", y, z))
+}
+"#,
+        ).unwrap();
+
+        let parser = RustParser;
+        let result = parser.parse(temp_dir.path());
+        assert!(result.is_ok());
+
+        let info = result.unwrap();
+        println!("Generated API:\n{}", info.api);
+        assert!(info.api.contains("pub fn complex_function(x: i32, y: &str, z: Option<Vec<String>>) -> Result<String, Box<dyn std::error::Error>>;"));
+        assert!(!info.api.contains("Ok(format!"));
+    }
+
+    #[test]
+    fn test_where_clause_formatting() {
+        let temp_dir = TempDir::new().unwrap();
+        let src_dir = temp_dir.path().join("src");
+        fs::create_dir(&src_dir).unwrap();
+
+        fs::write(
+            temp_dir.path().join("Cargo.toml"),
+            r#"[package]
+name = "test-crate"
+version = "0.1.0"
+"#,
+        ).unwrap();
+
+        fs::write(
+            src_dir.join("lib.rs"),
+            r#"
+pub fn generic_function<T>(data: T) -> Vec<String> where
+    T: AsRef<str> {
+    vec![data.as_ref().to_string()]
+}
+"#,
+        ).unwrap();
+
+        let parser = RustParser;
+        let result = parser.parse(temp_dir.path()).unwrap();
+        println!("Actual API output:\n{}", result.api);
+        assert!(result.api.contains("pub fn generic_function<T>(data: T) -> Vec<String> where\n    T: AsRef<str>;"));
+    }
+
+    #[test]
+    fn test_no_trailing_comma() {
+        let temp_dir = TempDir::new().unwrap();
+        let src_dir = temp_dir.path().join("src");
+        fs::create_dir(&src_dir).unwrap();
+
+        fs::write(
+            temp_dir.path().join("Cargo.toml"),
+            r#"[package]
+name = "test-crate"
+version = "0.1.0"
+"#,
+        ).unwrap();
+
+        fs::write(
+            src_dir.join("lib.rs"),
+            r#"
+pub fn stream_function<'a, I>(iter: I) -> Vec<String> where
+    I: Iterator<Item = &'a str>, {
+    vec![]
+}
+"#,
+        ).unwrap();
+
+        let parser = RustParser;
+        let result = parser.parse(temp_dir.path()).unwrap();
+        assert!(result.api.contains("pub fn stream_function<'a, I>(iter: I) -> Vec<String> where\n    I: Iterator<Item = &'a str>;"));
     }
 }
