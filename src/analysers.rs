@@ -1,4 +1,4 @@
-pub mod rust;
+use crate::languages::rust::RustAnalyser;
 
 use crate::error::LaibraryError;
 use crate::types::{ApiDefinitions, PackageMetadata, SourceFile};
@@ -18,7 +18,7 @@ pub trait LibraryAnalyser {
 /// Get an analyser for the specified language
 pub fn get_analyser(language: &str) -> Result<Box<dyn LibraryAnalyser>, LaibraryError> {
     match language {
-        "rust" => Ok(Box::new(rust::RustAnalyser::new())),
+        "rust" => Ok(Box::new(RustAnalyser::new())),
         _ => Err(LaibraryError::UnsupportedLanguage(language.to_string())),
     }
 }

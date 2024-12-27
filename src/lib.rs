@@ -2,6 +2,7 @@
 
 pub mod analysers;
 pub mod error;
+mod languages;
 pub mod types;
 
 use error::LaibraryError;
