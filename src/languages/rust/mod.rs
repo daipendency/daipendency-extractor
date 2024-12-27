@@ -46,11 +46,7 @@ impl LibraryAnalyser for RustAnalyser {
         impl_extractor::extract_public_api(sources)
     }
 
-    fn generate_documentation(
-        &self,
-        metadata: &PackageMetadata,
-        api: &Self::Api,
-    ) -> Result<String, LaibraryError> {
-        impl_generator::generate_documentation(metadata, api)
+    fn generate_documentation(&self, api: &Self::Api) -> Result<String, LaibraryError> {
+        impl_generator::generate_documentation(api)
     }
 }

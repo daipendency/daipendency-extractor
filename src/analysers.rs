@@ -10,11 +10,7 @@ pub trait LibraryAnalyser {
     fn extract_metadata(&self, path: &Path) -> Result<PackageMetadata, LaibraryError>;
     fn parse_source(&self, path: &Path) -> Result<Vec<SourceFile>, LaibraryError>;
     fn extract_public_api(&self, sources: &[SourceFile]) -> Result<Self::Api, LaibraryError>;
-    fn generate_documentation(
-        &self,
-        metadata: &PackageMetadata,
-        api: &Self::Api,
-    ) -> Result<String, LaibraryError>;
+    fn generate_documentation(&self, api: &Self::Api) -> Result<String, LaibraryError>;
 }
 
 /// Get an analyser for the specified language

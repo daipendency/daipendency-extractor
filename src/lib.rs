@@ -2,10 +2,12 @@
 
 pub mod analysers;
 pub mod error;
+pub mod formatting;
 mod languages;
 pub mod types;
 
 use error::LaibraryError;
+use formatting::format_library_context;
 use std::path::Path;
 
 /// Generate library API documentation for a given Rust crate path.
@@ -22,5 +24,6 @@ pub fn generate_library_api(crate_path: &Path) -> Result<String, LaibraryError> 
     let metadata = analyser.extract_metadata(crate_path)?;
     let sources = analyser.parse_source(crate_path)?;
     let api = analyser.extract_public_api(&sources)?;
-    analyser.generate_documentation(&metadata, &api)
+    let api_content = analyser.generate_documentation(&api)?;
+    format_library_context(&metadata, &api_content)
 }

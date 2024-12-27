@@ -1,69 +1,46 @@
 use super::ApiDefinitions;
 use crate::error::LaibraryError;
-use crate::types::PackageMetadata;
 
-pub(super) fn generate_documentation(
-    metadata: &PackageMetadata,
-    api: &ApiDefinitions,
-) -> Result<String, LaibraryError> {
-    let mut output = format!(
-        r#"<library name="{name}" version="{version}">
-    <documentation>
-    <![CDATA[
-{documentation}
-    ]]>
-    </documentation>
-    <api>
-    <![CDATA[
-"#,
-        name = metadata.name,
-        version = metadata.version,
-        documentation = metadata.documentation.trim()
-    );
+pub(super) fn generate_documentation(api: &ApiDefinitions) -> Result<String, LaibraryError> {
+    let mut api_content = String::new();
 
     // Add functions
     if !api.functions.is_empty() {
-        output.push_str("\n// Functions\n");
+        api_content.push_str("\n// Functions\n");
         for function in &api.functions {
-            output.push_str(function);
-            output.push('\n');
+            api_content.push_str(function);
+            api_content.push('\n');
         }
     }
 
     // Add structs
     if !api.structs.is_empty() {
-        output.push_str("\n// Structs\n");
+        api_content.push_str("\n// Structs\n");
         for struct_def in &api.structs {
-            output.push_str(struct_def);
-            output.push('\n');
+            api_content.push_str(struct_def);
+            api_content.push('\n');
         }
     }
 
     // Add enums
     if !api.enums.is_empty() {
-        output.push_str("\n// Enums\n");
+        api_content.push_str("\n// Enums\n");
         for enum_def in &api.enums {
-            output.push_str(enum_def);
-            output.push('\n');
+            api_content.push_str(enum_def);
+            api_content.push('\n');
         }
     }
 
     // Add traits
     if !api.traits.is_empty() {
-        output.push_str("\n// Traits\n");
+        api_content.push_str("\n// Traits\n");
         for trait_def in &api.traits {
-            output.push_str(trait_def);
-            output.push('\n');
+            api_content.push_str(trait_def);
+            api_content.push('\n');
         }
     }
 
-    output.push_str(
-        r#"    ]]>
-    </api>
-</library>"#,
-    );
-
-    Ok(output)
+    Ok(api_content)
 }
 
 #[cfg(test)]
@@ -72,12 +49,6 @@ mod tests {
 
     #[test]
     fn test_generate_documentation() {
-        let metadata = PackageMetadata {
-            name: "test-crate".to_string(),
-            version: "0.1.0".to_string(),
-            documentation: "Test documentation".to_string(),
-        };
-
         let api = ApiDefinitions {
             functions: vec!["pub fn test_function() -> ();".to_string()],
             structs: vec!["pub struct TestStruct { pub field: String }".to_string()],
@@ -85,11 +56,7 @@ mod tests {
             traits: vec!["pub trait TestTrait { fn method(&self); }".to_string()],
         };
 
-        let output = generate_documentation(&metadata, &api).unwrap();
-
-        // Check metadata
-        assert!(output.contains("<library name=\"test-crate\" version=\"0.1.0\">"));
-        assert!(output.contains("Test documentation"));
+        let output = generate_documentation(&api).unwrap();
 
         // Check API sections
         assert!(output.contains("// Functions"));
@@ -104,12 +71,6 @@ mod tests {
 
     #[test]
     fn test_generate_documentation_empty_api() {
-        let metadata = PackageMetadata {
-            name: "empty-crate".to_string(),
-            version: "0.1.0".to_string(),
-            documentation: "Empty crate".to_string(),
-        };
-
         let api = ApiDefinitions {
             functions: vec![],
             structs: vec![],
@@ -117,10 +78,8 @@ mod tests {
             traits: vec![],
         };
 
-        let output = generate_documentation(&metadata, &api).unwrap();
+        let output = generate_documentation(&api).unwrap();
 
-        assert!(output.contains("<library name=\"empty-crate\" version=\"0.1.0\">"));
-        assert!(output.contains("Empty crate"));
         assert!(!output.contains("// Functions"));
         assert!(!output.contains("// Structs"));
         assert!(!output.contains("// Enums"));
