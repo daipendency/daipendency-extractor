@@ -1,5 +1,6 @@
+use super::ApiDefinitions;
 use crate::error::LaibraryError;
-use crate::types::{ApiDefinitions, PackageMetadata};
+use crate::types::PackageMetadata;
 
 pub(super) fn generate_documentation(
     metadata: &PackageMetadata,

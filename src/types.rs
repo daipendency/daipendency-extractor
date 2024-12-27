@@ -1,4 +1,10 @@
+use std::any::Any;
+use std::fmt::Debug;
 use std::path::PathBuf;
+
+pub trait ApiRepresentation: Debug + Any {
+    fn as_any(&self) -> &dyn Any;
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct PackageMetadata {
@@ -11,14 +17,6 @@ pub struct PackageMetadata {
 pub struct SourceFile {
     pub path: PathBuf,
     pub content: String,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct ApiDefinitions {
-    pub functions: Vec<String>,
-    pub structs: Vec<String>,
-    pub enums: Vec<String>,
-    pub traits: Vec<String>,
 }
 
 /// Structure representing library information
