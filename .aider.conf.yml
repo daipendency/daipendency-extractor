@@ -1,5 +1,6 @@
 read:
-  - README.md
+- README.md
+- .cursorrules
 
 lint-cmd:
   - cargo fmt
