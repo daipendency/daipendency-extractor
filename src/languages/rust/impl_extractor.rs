@@ -90,6 +90,7 @@ fn extract_function_signature(node: &Node, source_code: &str) -> Result<String, 
     let mut cursor = node.walk();
     let mut signature = String::new();
     let mut in_return_type = false;
+    let mut in_where_clause = false;
 
     for part in node.children(&mut cursor) {
         match part.kind() {
@@ -118,12 +119,21 @@ fn extract_function_signature(node: &Node, source_code: &str) -> Result<String, 
             }
             "block" => break,
             "where" => {
+                in_where_clause = true;
                 signature.push_str(" where");
+            }
+            _ if in_where_clause => {
+                if let Ok(text) = part.utf8_text(source_code.as_bytes()) {
+                    signature.push_str(text);
+                }
             }
             _ if in_return_type => {
                 if let Ok(text) = part.utf8_text(source_code.as_bytes()) {
                     let text = text.trim_end_matches(',');
                     signature.push_str(text);
+                    if !text.ends_with(' ') {
+                        signature.push(' ');
+                    }
                 }
             }
             _ => {}
@@ -134,6 +144,7 @@ fn extract_function_signature(node: &Node, source_code: &str) -> Result<String, 
         signature.push_str(" -> ()");
     }
 
+    signature = signature.trim_end().to_string();
     signature.push(';');
     Ok(signature)
 }
@@ -257,8 +268,9 @@ pub fn complex_function<T>(data: T) -> Vec<String> where
         };
 
         let result = extract_public_api(&[source]).unwrap();
+        let expected =
+            "pub fn complex_function<T>(data: T) -> Vec<String> where\n    T: Display + Clone;";
         assert_eq!(result.functions.len(), 1);
-        assert!(result.functions[0].contains("where"));
-        assert!(result.functions[0].contains("T: Display + Clone"));
+        assert_eq!(result.functions[0], expected);
     }
 }
