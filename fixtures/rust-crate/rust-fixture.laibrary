@@ -1,6 +1,5 @@
 <library name="rust-crate" version="1.2.3">
     <documentation>
-<![CDATA[
 # rust-crate
 
 Demonstrates Rust library features through data processing and text formatting.
@@ -11,12 +10,10 @@ use rust_crate::text::{Format, TextFormatter};
 let fmt = TextFormatter::new(Format::Capitalise);
 assert_eq!(fmt.format("hello world")?, "Hello World");
 ```
-]]>
     </documentation>
 
     <api>
-<![CDATA[
-pub mod text {
+        <module name="rust_crate::text">
     //! Provides text formatting functionality through the TextFormatter type.
 
     /// Text formatting options available in the library.
@@ -108,7 +105,6 @@ pub mod text {
     macro_rules! uppercase {
         ($text:expr) => { ... };
     }
-}
-]]>
+        </module>
     </api>
 </library>

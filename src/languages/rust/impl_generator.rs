@@ -1,46 +1,7 @@
-use super::ApiDefinitions;
 use crate::error::LaibraryError;
 
-pub(super) fn generate_documentation(api: &ApiDefinitions) -> Result<String, LaibraryError> {
-    let mut api_content = String::new();
-
-    // Add functions
-    if !api.functions.is_empty() {
-        api_content.push_str("\n// Functions\n");
-        for function in &api.functions {
-            api_content.push_str(function);
-            api_content.push('\n');
-        }
-    }
-
-    // Add structs
-    if !api.structs.is_empty() {
-        api_content.push_str("\n// Structs\n");
-        for struct_def in &api.structs {
-            api_content.push_str(struct_def);
-            api_content.push('\n');
-        }
-    }
-
-    // Add enums
-    if !api.enums.is_empty() {
-        api_content.push_str("\n// Enums\n");
-        for enum_def in &api.enums {
-            api_content.push_str(enum_def);
-            api_content.push('\n');
-        }
-    }
-
-    // Add traits
-    if !api.traits.is_empty() {
-        api_content.push_str("\n// Traits\n");
-        for trait_def in &api.traits {
-            api_content.push_str(trait_def);
-            api_content.push('\n');
-        }
-    }
-
-    Ok(api_content)
+pub(super) fn generate_documentation(public_members: &[String]) -> Result<String, LaibraryError> {
+    Ok(public_members.join("\n\n"))
 }
 
 #[cfg(test)]
@@ -49,40 +10,35 @@ mod tests {
 
     #[test]
     fn test_generate_documentation() {
-        let api = ApiDefinitions {
-            functions: vec!["pub fn test_function() -> ();".to_string()],
-            structs: vec!["pub struct TestStruct { pub field: String }".to_string()],
-            enums: vec!["pub enum TestEnum { Variant1, Variant2 }".to_string()],
-            traits: vec!["pub trait TestTrait { fn method(&self); }".to_string()],
-        };
+        let public_members = vec![
+            "pub fn test() -> ();".to_string(),
+            "pub struct Test { field: String }".to_string(),
+            "pub enum TestEnum { A, B }".to_string(),
+        ];
 
-        let output = generate_documentation(&api).unwrap();
+        let documentation = generate_documentation(&public_members).unwrap();
 
-        // Check API sections
-        assert!(output.contains("// Functions"));
-        assert!(output.contains("pub fn test_function() -> ();"));
-        assert!(output.contains("// Structs"));
-        assert!(output.contains("pub struct TestStruct"));
-        assert!(output.contains("// Enums"));
-        assert!(output.contains("pub enum TestEnum"));
-        assert!(output.contains("// Traits"));
-        assert!(output.contains("pub trait TestTrait"));
+        assert!(documentation.contains("pub fn test() -> ();"));
+        assert!(documentation.contains("pub struct Test { field: String }"));
+        assert!(documentation.contains("pub enum TestEnum { A, B }"));
+        
+        // Verify items are separated by blank lines
+        let lines: Vec<_> = documentation.lines().collect();
+        assert_eq!(lines.len(), 5); // 3 items with 2 blank lines between them
+        assert!(lines[1].is_empty());
+        assert!(lines[3].is_empty());
     }
 
     #[test]
-    fn test_generate_documentation_empty_api() {
-        let api = ApiDefinitions {
-            functions: vec![],
-            structs: vec![],
-            enums: vec![],
-            traits: vec![],
-        };
+    fn test_generate_documentation_empty() {
+        let documentation = generate_documentation(&[]).unwrap();
+        assert!(documentation.is_empty());
+    }
 
-        let output = generate_documentation(&api).unwrap();
-
-        assert!(!output.contains("// Functions"));
-        assert!(!output.contains("// Structs"));
-        assert!(!output.contains("// Enums"));
-        assert!(!output.contains("// Traits"));
+    #[test]
+    fn test_generate_documentation_single_item() {
+        let public_members = vec!["pub fn standalone() -> ();".to_string()];
+        let documentation = generate_documentation(&public_members).unwrap();
+        assert_eq!(documentation, "pub fn standalone() -> ();");
     }
 }
