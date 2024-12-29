@@ -1,4 +1,5 @@
 use std::any::Any;
+use std::fmt;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct PackageMetadata {
@@ -14,12 +15,12 @@ pub struct SourceFile {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct Module {
+pub struct Module<T: fmt::Display> {
     pub name: String,
-    pub public_members: Vec<String>,
+    pub public_members: Vec<T>,
 }
 
 pub trait ApiRepresentation {
     fn as_any(&self) -> &dyn Any;
-    fn modules(&self) -> Vec<Module>;
+    fn modules(&self) -> Vec<Module<Box<dyn fmt::Display>>>;
 }

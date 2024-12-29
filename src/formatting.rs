@@ -1,9 +1,10 @@
 use crate::error::LaibraryError;
 use crate::types::{Module, PackageMetadata};
+use std::fmt::Display;
 
-pub fn format_library_context(
+pub fn format_library_context<T: Display>(
     metadata: &PackageMetadata,
-    modules: &[Module],
+    modules: &[Module<T>],
 ) -> Result<String, LaibraryError> {
     let mut api_content = String::new();
     
@@ -14,7 +15,10 @@ pub fn format_library_context(
         </module>
 "#,
             name = module.name,
-            content = module.public_members.join("\n")
+            content = module.public_members.iter()
+                .map(|m| m.to_string())
+                .collect::<Vec<_>>()
+                .join("\n")
         ));
     }
 
@@ -44,7 +48,7 @@ mod tests {
             documentation: "Test documentation".to_string(),
         };
 
-        let modules = vec![
+        let modules: Vec<Module<String>> = vec![
             Module {
                 name: "test_module".to_string(),
                 public_members: vec![
@@ -76,7 +80,9 @@ mod tests {
             documentation: "Empty crate".to_string(),
         };
 
-        let output = format_library_context(&metadata, &[]).unwrap();
+        let modules: Vec<Module<String>> = vec![];
+
+        let output = format_library_context(&metadata, &modules).unwrap();
 
         assert!(output.contains("<library name=\"empty-crate\" version=\"0.1.0\">"));
         assert!(output.contains("Empty crate"));

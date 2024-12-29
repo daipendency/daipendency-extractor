@@ -4,7 +4,7 @@ use std::fs;
 use std::path::Path;
 use toml::Value;
 
-pub(super) fn extract_metadata(path: &Path) -> Result<PackageMetadata, LaibraryError> {
+pub fn extract_metadata(path: &Path) -> Result<PackageMetadata, LaibraryError> {
     let cargo_toml_path = path.join("Cargo.toml");
     let cargo_toml_content = fs::read_to_string(&cargo_toml_path)
         .map_err(|e| LaibraryError::Parse(format!("Failed to read Cargo.toml: {}", e)))?;

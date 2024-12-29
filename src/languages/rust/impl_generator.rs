@@ -1,19 +1,31 @@
+use super::public_members::RustPublicMember;
 use crate::error::LaibraryError;
 
-pub(super) fn generate_documentation(public_members: &[String]) -> Result<String, LaibraryError> {
-    Ok(public_members.join("\n\n"))
+pub fn generate_documentation(public_members: &[RustPublicMember]) -> Result<String, LaibraryError> {
+    Ok(public_members.iter()
+        .map(|member| member.to_string())
+        .collect::<Vec<_>>()
+        .join("\n\n"))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::languages::rust::public_members::{RustPublicMember, Function};
 
     #[test]
     fn test_generate_documentation() {
         let public_members = vec![
-            "pub fn test() -> ();".to_string(),
-            "pub struct Test { field: String }".to_string(),
-            "pub enum TestEnum { A, B }".to_string(),
+            RustPublicMember::Function(Function {
+                name: "test".to_string(),
+                parameters: vec![],
+                return_type: Some("()".to_string()),
+                doc_comment: None,
+                type_parameters: vec![],
+                where_clause: None,
+            }),
+            RustPublicMember::from("pub struct Test { field: String }".to_string()),
+            RustPublicMember::from("pub enum TestEnum { A, B }".to_string()),
         ];
 
         let documentation = generate_documentation(&public_members).unwrap();
@@ -37,7 +49,16 @@ mod tests {
 
     #[test]
     fn test_generate_documentation_single_item() {
-        let public_members = vec!["pub fn standalone() -> ();".to_string()];
+        let public_members = vec![
+            RustPublicMember::Function(Function {
+                name: "standalone".to_string(),
+                parameters: vec![],
+                return_type: Some("()".to_string()),
+                doc_comment: None,
+                type_parameters: vec![],
+                where_clause: None,
+            })
+        ];
         let documentation = generate_documentation(&public_members).unwrap();
         assert_eq!(documentation, "pub fn standalone() -> ();");
     }

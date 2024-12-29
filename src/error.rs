@@ -38,3 +38,9 @@ impl From<std::io::Error> for LaibraryError {
         LaibraryError::Io(error)
     }
 }
+
+impl From<std::str::Utf8Error> for LaibraryError {
+    fn from(error: std::str::Utf8Error) -> Self {
+        LaibraryError::Parse(format!("UTF-8 error: {}", error))
+    }
+}

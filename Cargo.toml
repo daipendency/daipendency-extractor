@@ -10,6 +10,7 @@ cc = "1.2.6"
 toml = "0.8.19"
 tree-sitter = "0.24.6"
 tree-sitter-rust = "0.23.2"
+walkdir = "2.4.0"
 
 [dev-dependencies]
 tempfile = "3.10.0"
