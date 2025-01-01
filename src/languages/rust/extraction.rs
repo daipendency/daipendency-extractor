@@ -91,19 +91,16 @@ fn extract_public_items(
                         None => mod_name.clone(),
                     };
                     
-                    // First, check if this module has a block (inline module)
-                    let mut has_block = false;
+                    // Process inline module contents if present
                     for mod_child in child.children(&mut child.walk()) {
                         if mod_child.kind() == "declaration_list" {
-                            has_block = true;
                             let nested_modules = extract_public_items(mod_child, source_code, Some(&new_module_path))?;
                             modules.extend(nested_modules);
                         }
                     }
                     
-                    if !has_block {
-                        // This is an external module, add it to the map with an empty Vec
-                        // The actual contents will be processed when we encounter the module file
+                    // Always add the module to the map, even if it's empty
+                    if !modules.contains_key(&new_module_path) {
                         modules.insert(new_module_path, Vec::new());
                     }
                 }
@@ -424,6 +421,29 @@ fn extract_type(node: &Node, source_code: &str) -> Result<String, LaibraryError>
                     return Ok(text.to_string());
                 }
             }
+            "qualified_type" | "scoped_type_identifier" => {
+                if let Ok(text) = child.utf8_text(source_code.as_bytes()) {
+                    return Ok(text.to_string());
+                }
+            }
+            "dynamic_type" => {
+                let mut type_str = String::new();
+                let mut found_dyn = false;
+                for dyn_child in child.children(&mut child.walk()) {
+                    if let Ok(text) = dyn_child.utf8_text(source_code.as_bytes()) {
+                        if text == "dyn" {
+                            found_dyn = true;
+                        }
+                        type_str.push_str(text);
+                        type_str.push_str(" ");
+                    }
+                }
+                if !found_dyn {
+                    type_str.insert_str(0, "dyn ");
+                }
+                type_str.pop(); // Remove trailing space
+                return Ok(type_str);
+            }
             _ => continue
         }
     }
@@ -469,6 +489,14 @@ fn extract_generic_type(node: &Node, source_code: &str) -> Result<String, Laibra
                         first = false;
                         type_str.push_str("()");
                     }
+                    "generic_type" => {
+                        if !first {
+                            type_str.push_str(", ");
+                        }
+                        first = false;
+                        let nested_type = extract_generic_type(&type_arg, source_code)?;
+                        type_str.push_str(&nested_type);
+                    }
                     "type_identifier" => {
                         if !first {
                             type_str.push_str(", ");
@@ -477,6 +505,44 @@ fn extract_generic_type(node: &Node, source_code: &str) -> Result<String, Laibra
                         if let Ok(text) = type_arg.utf8_text(source_code.as_bytes()) {
                             type_str.push_str(text);
                         }
+                    }
+                    "qualified_type" => {
+                        if !first {
+                            type_str.push_str(", ");
+                        }
+                        first = false;
+                        if let Ok(text) = type_arg.utf8_text(source_code.as_bytes()) {
+                            type_str.push_str(text);
+                        }
+                    }
+                    "scoped_type_identifier" => {
+                        if !first {
+                            type_str.push_str(", ");
+                        }
+                        first = false;
+                        if let Ok(text) = type_arg.utf8_text(source_code.as_bytes()) {
+                            type_str.push_str(text);
+                        }
+                    }
+                    "dynamic_type" => {
+                        if !first {
+                            type_str.push_str(", ");
+                        }
+                        first = false;
+                        let mut found_dyn = false;
+                        for dyn_child in type_arg.children(&mut type_arg.walk()) {
+                            if let Ok(text) = dyn_child.utf8_text(source_code.as_bytes()) {
+                                if text == "dyn" {
+                                    found_dyn = true;
+                                }
+                                type_str.push_str(text);
+                                type_str.push_str(" ");
+                            }
+                        }
+                        if !found_dyn {
+                            type_str.insert_str(type_str.len() - 1, "dyn ");
+                        }
+                        type_str.pop(); // Remove trailing space
                     }
                     "," => continue,
                     "<" | ">" => continue,
@@ -497,153 +563,270 @@ mod tests {
     use std::path::PathBuf;
     use crate::languages::rust::public_members::{Function, Parameter, TypeParameter};
 
-    #[test]
-    fn test_determine_module_path() {
-        // lib.rs should have no module path
-        assert_eq!(
-            determine_module_path(&PathBuf::from("src/lib.rs")).unwrap(),
-            None
-        );
+    mod module_path {
+        use super::*;
 
-        // Direct module file
-        assert_eq!(
-            determine_module_path(&PathBuf::from("src/text.rs")).unwrap(),
-            Some("text".to_string())
-        );
+        #[test]
+        fn lib_rs_has_no_module_path() {
+            assert_eq!(
+                determine_module_path(&PathBuf::from("src/lib.rs")).unwrap(),
+                None
+            );
+        }
 
-        // Module in mod.rs
-        assert_eq!(
-            determine_module_path(&PathBuf::from("src/text/mod.rs")).unwrap(),
-            Some("text".to_string())
-        );
+        #[test]
+        fn direct_module_file_has_single_segment_path() {
+            assert_eq!(
+                determine_module_path(&PathBuf::from("src/text.rs")).unwrap(),
+                Some("text".to_string())
+            );
+        }
 
-        // Nested module
-        assert_eq!(
-            determine_module_path(&PathBuf::from("src/text/formatter.rs")).unwrap(),
-            Some("text::formatter".to_string())
-        );
+        #[test]
+        fn mod_rs_has_directory_name_path() {
+            assert_eq!(
+                determine_module_path(&PathBuf::from("src/text/mod.rs")).unwrap(),
+                Some("text".to_string())
+            );
+        }
+
+        #[test]
+        fn nested_module_has_multi_segment_path() {
+            assert_eq!(
+                determine_module_path(&PathBuf::from("src/text/formatter.rs")).unwrap(),
+                Some("text::formatter".to_string())
+            );
+        }
     }
 
-    #[test]
-    fn test_extract_nested_modules() {
-        let source = SourceFile {
-            path: PathBuf::from("src/text/mod.rs"),
-            content: r#"
+    mod modules {
+        use super::*;
+
+        #[test]
+        fn nested_modules_are_extracted() {
+            let source = SourceFile {
+                path: PathBuf::from("src/text/mod.rs"),
+                content: r#"
 pub mod inner {
     pub fn nested_function() -> String {}
 }
 pub fn outer_function() -> i32 {}
 "#
-            .to_string(),
-        };
+                .to_string(),
+            };
 
-        let result = extract_public_api(&[source]).unwrap();
-        let modules = result.modules;
+            let result = extract_public_api(&[source]).unwrap();
+            let modules = result.modules;
 
-        assert!(modules.contains_key("text"));
-        assert!(modules.contains_key("text::inner"));
-        assert_eq!(
-            modules.get("text").unwrap(),
-            &vec![RustPublicMember::Function(Function {
-                name: "outer_function".to_string(),
-                parameters: vec![],
-                return_type: Some("i32".to_string()),
-                doc_comment: None,
-                type_parameters: vec![],
-                where_clause: None,
-            })]
-        );
-        assert_eq!(
-            modules.get("text::inner").unwrap(),
-            &vec![RustPublicMember::Function(Function {
-                name: "nested_function".to_string(),
-                parameters: vec![],
-                return_type: Some("String".to_string()),
-                doc_comment: None,
-                type_parameters: vec![],
-                where_clause: None,
-            })]
-        );
-    }
+            assert!(modules.contains_key("text"));
+            assert!(modules.contains_key("text::inner"));
+            assert_eq!(
+                modules.get("text").unwrap(),
+                &vec![RustPublicMember::Function(Function {
+                    name: "outer_function".to_string(),
+                    parameters: vec![],
+                    return_type: Some("i32".to_string()),
+                    doc_comment: None,
+                    type_parameters: vec![],
+                    where_clause: None,
+                })]
+            );
+            assert_eq!(
+                modules.get("text::inner").unwrap(),
+                &vec![RustPublicMember::Function(Function {
+                    name: "nested_function".to_string(),
+                    parameters: vec![],
+                    return_type: Some("String".to_string()),
+                    doc_comment: None,
+                    type_parameters: vec![],
+                    where_clause: None,
+                })]
+            );
+        }
 
-    #[test]
-    fn test_extract_mixed_items() {
-        let source = SourceFile {
-            path: PathBuf::from("src/text/mod.rs"),
-            content: r#"
-pub struct TestStruct {
-    pub field: String,
+        #[test]
+        fn private_modules_are_ignored() {
+            let source = SourceFile {
+                path: PathBuf::from("src/text/mod.rs"),
+                content: r#"
+mod private {
+    pub fn private_function() -> String {}
 }
-pub enum TestEnum {
-    A,
-    B(i32),
-}
-pub fn test_function() -> i32 {}
-pub trait TestTrait {
-    fn method(&self);
-}
+pub fn public_function() -> i32 {}
 "#
-            .to_string(),
-        };
+                .to_string(),
+            };
 
-        let result = extract_public_api(&[source]).unwrap();
-        let modules = result.modules;
+            let result = extract_public_api(&[source]).unwrap();
+            let modules = result.modules;
 
-        let test_module_items = modules.get("text").unwrap();
-        assert_eq!(test_module_items.len(), 4);
-        assert!(test_module_items
-            .iter()
-            .any(|item| matches!(item, RustPublicMember::Struct(_))));
-        assert!(test_module_items
-            .iter()
-            .any(|item| matches!(item, RustPublicMember::Enum(_))));
-        assert!(test_module_items
-            .iter()
-            .any(|item| matches!(item, RustPublicMember::Function(_))));
-         assert!(test_module_items
-            .iter()
-            .any(|item| matches!(item, RustPublicMember::Trait(_))));
+            assert!(modules.contains_key("text"));
+            assert!(!modules.contains_key("text::private"));
+            assert_eq!(modules.get("text").unwrap().len(), 1);
+        }
+
+        #[test]
+        fn empty_modules_are_included() {
+            let source = SourceFile {
+                path: PathBuf::from("src/text/mod.rs"),
+                content: r#"
+pub mod empty {}
+"#
+                .to_string(),
+            };
+
+            let result = extract_public_api(&[source]).unwrap();
+            let modules = result.modules;
+
+            assert!(modules.contains_key("text::empty"));
+            assert!(modules.get("text::empty").unwrap().is_empty());
+        }
     }
 
-    #[test]
-    fn test_private_items_ignored() {
-        let source = SourceFile {
-            path: PathBuf::from("src/text/mod.rs"),
-            content: r#"
+    mod functions {
+        use super::*;
+
+        #[test]
+        fn basic_function_with_no_params() {
+            let source = SourceFile {
+                path: PathBuf::from("src/text.rs"),
+                content: r#"pub fn test_no_params() -> () {}"#.to_string(),
+            };
+
+            let result = extract_public_api(&[source]).unwrap();
+            let func = get_first_function(&result.modules, "text");
+
+            assert_eq!(func.name, "test_no_params");
+            assert!(func.parameters.is_empty());
+            assert_eq!(func.return_type, Some("()".to_string()));
+            assert!(func.type_parameters.is_empty());
+            assert!(func.where_clause.is_none());
+        }
+
+        #[test]
+        fn function_with_implicit_unit_return() {
+            let source = SourceFile {
+                path: PathBuf::from("src/text.rs"),
+                content: r#"pub fn test_no_return() {}"#.to_string(),
+            };
+
+            let result = extract_public_api(&[source]).unwrap();
+            let func = get_first_function(&result.modules, "text");
+
+            assert_eq!(func.name, "test_no_return");
+            assert!(func.parameters.is_empty());
+            assert_eq!(func.return_type, Some("()".to_string()));
+        }
+
+        #[test]
+        fn function_with_parameters() {
+            let source = SourceFile {
+                path: PathBuf::from("src/text.rs"),
+                content: r#"pub fn test_params(a: i32, b: String) -> bool {}"#.to_string(),
+            };
+
+            let result = extract_public_api(&[source]).unwrap();
+            let func = get_first_function(&result.modules, "text");
+
+            assert_eq!(func.name, "test_params");
+            assert_eq!(func.parameters, vec![
+                Parameter { name: "a".to_string(), type_name: "i32".to_string() },
+                Parameter { name: "b".to_string(), type_name: "String".to_string() },
+            ]);
+            assert_eq!(func.return_type, Some("bool".to_string()));
+        }
+
+        #[test]
+        fn function_with_generic_parameters() {
+            let source = SourceFile {
+                path: PathBuf::from("src/text.rs"),
+                content: r#"pub fn test_generics<T: std::fmt::Display>(a: T) -> T {}"#.to_string(),
+            };
+
+            let result = extract_public_api(&[source]).unwrap();
+            let func = get_first_function(&result.modules, "text");
+
+            assert_eq!(func.name, "test_generics");
+            assert_eq!(func.parameters, vec![
+                Parameter { name: "a".to_string(), type_name: "T".to_string() },
+            ]);
+            assert_eq!(func.return_type, Some("T".to_string()));
+            assert_eq!(func.type_parameters, vec![
+                TypeParameter { name: "T".to_string(), bounds: vec!["std::fmt::Display".to_string()] }
+            ]);
+        }
+
+        #[test]
+        fn function_with_where_clause() {
+            let source = SourceFile {
+                path: PathBuf::from("src/text.rs"),
+                content: r#"pub fn test_where<T>(a: T) -> T where T: std::fmt::Display {}"#.to_string(),
+            };
+
+            let result = extract_public_api(&[source]).unwrap();
+            let func = get_first_function(&result.modules, "text");
+
+            assert_eq!(func.name, "test_where");
+            assert_eq!(func.parameters, vec![
+                Parameter { name: "a".to_string(), type_name: "T".to_string() },
+            ]);
+            assert_eq!(func.return_type, Some("T".to_string()));
+            assert_eq!(func.where_clause, Some("T: std::fmt::Display".to_string()));
+        }
+
+        #[test]
+        fn function_with_complex_return_type() {
+            let source = SourceFile {
+                path: PathBuf::from("src/text.rs"),
+                content: r#"pub fn test_complex() -> Result<Vec<String>, Box<dyn std::error::Error>> {}"#.to_string(),
+            };
+
+            let result = extract_public_api(&[source]).unwrap();
+            let func = get_first_function(&result.modules, "text");
+
+            assert_eq!(func.name, "test_complex");
+            assert_eq!(func.return_type, Some("Result<Vec<String>, Box<dyn std::error::Error>>".to_string()));
+        }
+
+        fn get_first_function<'a>(modules: &'a HashMap<String, Vec<RustPublicMember>>, module_name: &str) -> &'a Function {
+            match &modules.get(module_name).unwrap()[0] {
+                RustPublicMember::Function(f) => f,
+                _ => panic!("Expected a function"),
+            }
+        }
+    }
+
+    mod visibility {
+        use super::*;
+
+        #[test]
+        fn private_items_are_ignored() {
+            let source = SourceFile {
+                path: PathBuf::from("src/text/mod.rs"),
+                content: r#"
 struct PrivateStruct {}
 fn private_function() {}
 pub fn public_function() -> () {}
 "#
-            .to_string(),
-        };
+                .to_string(),
+            };
 
-        let result = extract_public_api(&[source]).unwrap();
-        let modules = result.modules;
+            let result = extract_public_api(&[source]).unwrap();
+            let modules = result.modules;
 
-        let test_module_items = modules.get("text").unwrap();
-        assert_eq!(test_module_items.len(), 1);
-        assert!(matches!(test_module_items[0], RustPublicMember::Function(_)));
-        if let RustPublicMember::Function(func) = &test_module_items[0] {
-            assert_eq!(func.name, "public_function");
+            let test_module_items = modules.get("text").unwrap();
+            assert_eq!(test_module_items.len(), 1);
+            assert!(matches!(test_module_items[0], RustPublicMember::Function(_)));
+            if let RustPublicMember::Function(func) = &test_module_items[0] {
+                assert_eq!(func.name, "public_function");
+            }
         }
-    }
 
-    #[test]
-    fn test_empty_source() {
-        let source = SourceFile {
-            path: PathBuf::from("src/empty.rs"),
-            content: String::new(),
-        };
-
-        let result = extract_public_api(&[source]).unwrap();
-        assert!(result.modules.is_empty());
-    }
-
-    #[test]
-    fn test_lib_items_ignored() {
-        let source = SourceFile {
-            path: PathBuf::from("src/lib.rs"),
-            content: r#"
+        #[test]
+        fn lib_items_are_ignored() {
+            let source = SourceFile {
+                path: PathBuf::from("src/lib.rs"),
+                content: r#"
 pub fn root_function() -> () {}
 pub struct RootStruct {}
 
@@ -651,140 +834,61 @@ pub mod text {
     pub fn text_function() -> () {}
 }
 "#
-            .to_string(),
-        };
+                .to_string(),
+            };
 
-        let result = extract_public_api(&[source]).unwrap();
-        let modules = result.modules;
+            let result = extract_public_api(&[source]).unwrap();
+            let modules = result.modules;
 
-        // Root items should be ignored
-        assert!(!modules.contains_key(""));
-        
-        // Module items should be included
-        if let Some(text_module) = modules.get("text") {
-            assert_eq!(text_module.len(), 1);
-            assert!(matches!(text_module[0], RustPublicMember::Function(_)));
-            if let RustPublicMember::Function(func) = &text_module[0] {
-                assert_eq!(func.name, "text_function");
+            assert!(!modules.contains_key(""));
+            
+            if let Some(text_module) = modules.get("text") {
+                assert_eq!(text_module.len(), 1);
+                assert!(matches!(text_module[0], RustPublicMember::Function(_)));
+                if let RustPublicMember::Function(func) = &text_module[0] {
+                    assert_eq!(func.name, "text_function");
+                }
+            } else {
+                panic!("Expected text module to be present");
             }
-        } else {
-            panic!("Expected text module to be present");
         }
     }
 
-    #[test]
-    fn test_extract_function_with_params_and_where_clause() {
-        let source = SourceFile {
-            path: PathBuf::from("src/text.rs"),
-            content: r#"
-            pub fn test_function(a: i32, b: String) -> Result<(), Error> where Error: std::error::Error {}
-            "#.to_string(),
-        };
+    mod edge_cases {
+        use super::*;
 
-        let result = extract_public_api(&[source]).unwrap();
-        let modules = result.modules;
-        let functions = modules.get("text").unwrap();
+        #[test]
+        fn empty_source_file() {
+            let source = SourceFile {
+                path: PathBuf::from("src/empty.rs"),
+                content: String::new(),
+            };
 
-        assert_eq!(functions.len(), 1, "Expected 1 function");
-        
-        let func = match &functions[0] {
-            RustPublicMember::Function(f) => f,
-            _ => panic!("Expected a function"),
-        };
+            let result = extract_public_api(&[source]).unwrap();
+            assert!(result.modules.is_empty());
+        }
 
-        assert_eq!(func.name, "test_function");
-        assert_eq!(func.parameters, vec![
-            Parameter { name: "a".to_string(), type_name: "i32".to_string() },
-            Parameter { name: "b".to_string(), type_name: "String".to_string() },
-        ]);
-        assert_eq!(func.return_type, Some("Result<(), Error>".to_string()));
-        assert_eq!(func.where_clause, Some("Error: std::error::Error".to_string()));
-        assert!(func.type_parameters.is_empty());
-    }
+        #[test]
+        fn whitespace_only_source() {
+            let source = SourceFile {
+                path: PathBuf::from("src/whitespace.rs"),
+                content: "    \n\t\n    ".to_string(),
+            };
 
-    #[test]
-    fn test_extract_generic_function() {
-        let source = SourceFile {
-            path: PathBuf::from("src/text.rs"),
-            content: r#"
-            pub fn test_generics<T: std::fmt::Display>(a: T) -> T {}
-            "#.to_string(),
-        };
+            let result = extract_public_api(&[source]).unwrap();
+            assert!(result.modules.is_empty());
+        }
 
-        let result = extract_public_api(&[source]).unwrap();
-        let modules = result.modules;
-        let functions = modules.get("text").unwrap();
+        #[test]
+        fn comments_only_source() {
+            let source = SourceFile {
+                path: PathBuf::from("src/comments.rs"),
+                content: "// Just a comment\n/* Another comment */".to_string(),
+            };
 
-        assert_eq!(functions.len(), 1, "Expected 1 function");
-        
-        let func = match &functions[0] {
-            RustPublicMember::Function(f) => f,
-            _ => panic!("Expected a function"),
-        };
-
-        assert_eq!(func.name, "test_generics");
-        assert_eq!(func.parameters, vec![
-            Parameter { name: "a".to_string(), type_name: "T".to_string() },
-        ]);
-        assert_eq!(func.return_type, Some("T".to_string()));
-        assert_eq!(func.type_parameters, vec![
-            TypeParameter { name: "T".to_string(), bounds: vec!["std::fmt::Display".to_string()] }
-        ]);
-        assert!(func.where_clause.is_none());
-    }
-
-    #[test]
-    fn test_extract_function_with_unit_return() {
-        let source = SourceFile {
-            path: PathBuf::from("src/text.rs"),
-            content: r#"
-            pub fn test_no_params() -> () {}
-            "#.to_string(),
-        };
-
-        let result = extract_public_api(&[source]).unwrap();
-        let modules = result.modules;
-        let functions = modules.get("text").unwrap();
-
-        assert_eq!(functions.len(), 1, "Expected 1 function");
-        
-        let func = match &functions[0] {
-            RustPublicMember::Function(f) => f,
-            _ => panic!("Expected a function"),
-        };
-
-        assert_eq!(func.name, "test_no_params");
-        assert!(func.parameters.is_empty());
-        assert_eq!(func.return_type, Some("()".to_string()));
-        assert!(func.type_parameters.is_empty());
-        assert!(func.where_clause.is_none());
-    }
-
-    #[test]
-    fn test_extract_function_with_implicit_unit_return() {
-        let source = SourceFile {
-            path: PathBuf::from("src/text.rs"),
-            content: r#"
-            pub fn test_no_return() {}
-            "#.to_string(),
-        };
-
-        let result = extract_public_api(&[source]).unwrap();
-        let modules = result.modules;
-        let functions = modules.get("text").unwrap();
-
-        assert_eq!(functions.len(), 1, "Expected 1 function");
-        
-        let func = match &functions[0] {
-            RustPublicMember::Function(f) => f,
-            _ => panic!("Expected a function"),
-        };
-
-        assert_eq!(func.name, "test_no_return");
-        assert!(func.parameters.is_empty());
-        assert_eq!(func.return_type, Some("()".to_string()));
-        assert!(func.type_parameters.is_empty());
-        assert!(func.where_clause.is_none());
+            let result = extract_public_api(&[source]).unwrap();
+            assert!(result.modules.is_empty());
+        }
     }
 }
 

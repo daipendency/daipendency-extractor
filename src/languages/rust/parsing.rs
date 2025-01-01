@@ -51,79 +51,165 @@ mod tests {
     use std::io::Write;
     use tempfile::TempDir;
 
-    fn create_test_source(dir: &Path) -> Result<(), std::io::Error> {
-        let src_dir = dir.join("src");
+    mod valid_crates {
+        use super::*;
+
+        #[test]
+        fn basic_crate_structure() {
+            let temp_dir = TempDir::new().unwrap();
+            create_test_crate(temp_dir.path(), &[
+                ("lib.rs", r#"pub fn test_function() {}"#),
+                ("nested/mod.rs", r#"pub fn nested_function() {}"#),
+            ]).unwrap();
+
+            let sources = parse_source(temp_dir.path()).unwrap();
+            assert_eq!(sources.len(), 2);
+            assert!(sources.iter().any(|s| s.path.ends_with("lib.rs")));
+            assert!(sources.iter().any(|s| s.path.ends_with("mod.rs")));
+        }
+
+        #[test]
+        fn multiple_nested_modules() {
+            let temp_dir = TempDir::new().unwrap();
+            create_test_crate(temp_dir.path(), &[
+                ("lib.rs", ""),
+                ("a/mod.rs", ""),
+                ("a/b/mod.rs", ""),
+                ("a/b/c.rs", ""),
+            ]).unwrap();
+
+            let sources = parse_source(temp_dir.path()).unwrap();
+            assert_eq!(sources.len(), 4);
+            assert!(sources.iter().any(|s| s.path.ends_with("c.rs")));
+            assert!(sources.iter().any(|s| s.path.ends_with("a/mod.rs")));
+            assert!(sources.iter().any(|s| s.path.ends_with("a/b/mod.rs")));
+        }
+
+        #[test]
+        fn module_with_multiple_files() {
+            let temp_dir = TempDir::new().unwrap();
+            create_test_crate(temp_dir.path(), &[
+                ("lib.rs", ""),
+                ("module/mod.rs", ""),
+                ("module/one.rs", ""),
+                ("module/two.rs", ""),
+            ]).unwrap();
+
+            let sources = parse_source(temp_dir.path()).unwrap();
+            assert_eq!(sources.len(), 4);
+            assert!(sources.iter().any(|s| s.path.ends_with("one.rs")));
+            assert!(sources.iter().any(|s| s.path.ends_with("two.rs")));
+        }
+    }
+
+    mod invalid_crates {
+        use super::*;
+
+        #[test]
+        fn missing_src_directory() {
+            let temp_dir = TempDir::new().unwrap();
+            let result = parse_source(temp_dir.path());
+            assert!(matches!(result, Err(LaibraryError::Parse(_))));
+            assert!(result.unwrap_err().to_string().contains("Source directory does not exist"));
+        }
+
+        #[test]
+        fn empty_source_file() {
+            let temp_dir = TempDir::new().unwrap();
+            create_test_crate(temp_dir.path(), &[
+                ("empty.rs", ""),
+            ]).unwrap();
+
+            let sources = parse_source(temp_dir.path()).unwrap();
+            assert_eq!(sources.len(), 0);
+        }
+
+        #[test]
+        fn invalid_utf8_content() {
+            let temp_dir = TempDir::new().unwrap();
+            let src_dir = temp_dir.path().join("src");
+            fs::create_dir(&src_dir).unwrap();
+
+            let mut file = File::create(src_dir.join("invalid.rs")).unwrap();
+            file.write_all(&[0x80]).unwrap(); // Invalid UTF-8 byte
+
+            let result = parse_source(temp_dir.path());
+            assert!(matches!(result, Err(LaibraryError::Parse(_))));
+            assert!(result.unwrap_err().to_string().contains("Failed to read source file"));
+        }
+
+        #[test]
+        fn unreadable_source_file() {
+            let temp_dir = TempDir::new().unwrap();
+            create_test_crate(temp_dir.path(), &[
+                ("lib.rs", "pub fn test() {}"),
+            ]).unwrap();
+
+            // Make the file unreadable
+            let file_path = temp_dir.path().join("src").join("lib.rs");
+            std::fs::set_permissions(&file_path, std::fs::Permissions::from_mode(0o000)).unwrap();
+
+            let result = parse_source(temp_dir.path());
+            assert!(matches!(result, Err(LaibraryError::Parse(_))));
+            assert!(result.unwrap_err().to_string().contains("Failed to read source file"));
+
+            // Restore permissions for cleanup
+            std::fs::set_permissions(&file_path, std::fs::Permissions::from_mode(0o644)).unwrap();
+        }
+    }
+
+    mod edge_cases {
+        use super::*;
+
+        #[test]
+        fn only_comments() {
+            let temp_dir = TempDir::new().unwrap();
+            create_test_crate(temp_dir.path(), &[
+                ("lib.rs", "// Just a comment\n/* Block comment */"),
+            ]).unwrap();
+
+            let sources = parse_source(temp_dir.path()).unwrap();
+            assert_eq!(sources.len(), 0);
+        }
+
+        #[test]
+        fn only_whitespace() {
+            let temp_dir = TempDir::new().unwrap();
+            create_test_crate(temp_dir.path(), &[
+                ("lib.rs", "   \n\t\n  "),
+            ]).unwrap();
+
+            let sources = parse_source(temp_dir.path()).unwrap();
+            assert_eq!(sources.len(), 0);
+        }
+
+        #[test]
+        fn non_rs_files() {
+            let temp_dir = TempDir::new().unwrap();
+            let src_dir = temp_dir.path().join("src");
+            fs::create_dir(&src_dir).unwrap();
+            fs::write(src_dir.join("file.txt"), "text content").unwrap();
+            fs::write(src_dir.join("lib.rs"), "pub fn test() {}").unwrap();
+
+            let sources = parse_source(temp_dir.path()).unwrap();
+            assert_eq!(sources.len(), 1);
+            assert!(sources[0].path.ends_with("lib.rs"));
+        }
+    }
+
+    // Helper function to create test crate structure
+    fn create_test_crate(root: &Path, files: &[(&str, &str)]) -> Result<(), std::io::Error> {
+        let src_dir = root.join("src");
         fs::create_dir(&src_dir)?;
 
-        // Create lib.rs
-        fs::write(
-            src_dir.join("lib.rs"),
-            r#"
-pub struct TestStruct {
-    field: String,
-}
-
-pub fn test_function() {}
-"#,
-        )?;
-
-        // Create a nested module
-        let nested_dir = src_dir.join("nested");
-        fs::create_dir(&nested_dir)?;
-        fs::write(
-            nested_dir.join("mod.rs"),
-            r#"
-pub fn nested_function() {}
-"#,
-        )?;
+        for (file_path, content) in files {
+            let full_path = src_dir.join(file_path);
+            if let Some(parent) = full_path.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            fs::write(full_path, content)?;
+        }
 
         Ok(())
-    }
-
-    #[test]
-    fn test_parse_source_valid_crate() {
-        let temp_dir = TempDir::new().unwrap();
-        create_test_source(temp_dir.path()).unwrap();
-
-        let result = parse_source(temp_dir.path());
-        assert!(result.is_ok());
-
-        let sources = result.unwrap();
-        assert_eq!(sources.len(), 2);
-        assert!(sources.iter().any(|s| s.path.ends_with("lib.rs")));
-        assert!(sources.iter().any(|s| s.path.ends_with("mod.rs")));
-    }
-
-    #[test]
-    fn test_missing_src_directory() {
-        let temp_dir = TempDir::new().unwrap();
-        let result = parse_source(temp_dir.path());
-        assert!(matches!(result, Err(LaibraryError::Parse(_))));
-    }
-
-    #[test]
-    fn test_empty_source_file() {
-        let temp_dir = TempDir::new().unwrap();
-        let src_dir = temp_dir.path().join("src");
-        fs::create_dir(&src_dir).unwrap();
-        fs::write(src_dir.join("empty.rs"), "").unwrap();
-
-        let result = parse_source(temp_dir.path());
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap().len(), 0);
-    }
-
-    #[test]
-    fn test_invalid_utf8_in_source() {
-        let temp_dir = TempDir::new().unwrap();
-        let src_dir = temp_dir.path().join("src");
-        fs::create_dir(&src_dir).unwrap();
-
-        // Write an invalid UTF-8 sequence (0x80 is an invalid start byte)
-        let mut file = File::create(src_dir.join("invalid.rs")).unwrap();
-        file.write_all(&[0x80]).unwrap();
-
-        let result = parse_source(temp_dir.path());
-        assert!(matches!(result, Err(LaibraryError::Parse(_))));
     }
 }
