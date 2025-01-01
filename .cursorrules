@@ -1,1 +1,4 @@
-- Always run the tests after making changes to the codebase.
+- All the branches of each unit under test should be covered, preferably with a unit test for each branch. When changing the unit test, make sure to add or update tests accordingly.
+- Run the tests after making changes to the codebase.
+- Run the tests with `RUST_BACKTRACE=full`.
+- Use British grammar and spelling.
