@@ -1,7 +1,7 @@
 use super::public_members::RustPublicMember;
 use crate::error::LaibraryError;
 
-pub fn generate_documentation(public_members: &[RustPublicMember]) -> Result<String, LaibraryError> {
+pub fn format_documentation(public_members: &[RustPublicMember]) -> Result<String, LaibraryError> {
     Ok(public_members.iter()
         .map(|member| member.to_string())
         .collect::<Vec<_>>()
@@ -28,7 +28,7 @@ mod tests {
             RustPublicMember::from("pub enum TestEnum { A, B }".to_string()),
         ];
 
-        let documentation = generate_documentation(&public_members).unwrap();
+        let documentation = format_documentation(&public_members).unwrap();
 
         assert!(documentation.contains("pub fn test() -> ();"));
         assert!(documentation.contains("pub struct Test { field: String }"));
@@ -43,7 +43,7 @@ mod tests {
 
     #[test]
     fn test_generate_documentation_empty() {
-        let documentation = generate_documentation(&[]).unwrap();
+        let documentation = format_documentation(&[]).unwrap();
         assert!(documentation.is_empty());
     }
 
@@ -59,7 +59,7 @@ mod tests {
                 where_clause: None,
             })
         ];
-        let documentation = generate_documentation(&public_members).unwrap();
+        let documentation = format_documentation(&public_members).unwrap();
         assert_eq!(documentation, "pub fn standalone() -> ();");
     }
 }

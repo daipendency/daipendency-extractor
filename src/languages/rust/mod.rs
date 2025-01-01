@@ -1,7 +1,7 @@
 pub mod public_members;
-pub mod impl_extractor;
-pub mod impl_generator;
-pub mod impl_metadata;
+pub mod extraction;
+pub mod formatting;
+pub mod metadata;
 
 use crate::types::{ApiRepresentation, Module, PackageMetadata, SourceFile};
 use std::any::Any;
@@ -48,7 +48,7 @@ impl LibraryAnalyser for RustAnalyser {
     type Api = RustApi;
 
     fn extract_metadata(&self, path: &Path) -> Result<PackageMetadata, LaibraryError> {
-        impl_metadata::extract_metadata(path)
+        metadata::extract_metadata(path)
     }
 
     fn parse_source(&self, path: &Path) -> Result<Vec<SourceFile>, LaibraryError> {
@@ -77,18 +77,18 @@ impl LibraryAnalyser for RustAnalyser {
     }
 
     fn extract_public_api(&self, sources: &[SourceFile]) -> Result<Self::Api, LaibraryError> {
-        impl_extractor::extract_public_api(sources)
+        extraction::extract_public_api(sources)
     }
 
-    fn generate_documentation(&self, api: &Self::Api) -> Result<String, LaibraryError> {
+    fn format_documentation(&self, api: &Self::Api) -> Result<String, LaibraryError> {
         let mut all_members = Vec::new();
         for members in api.modules.values() {
             all_members.extend(members.iter().cloned());
         }
-        impl_generator::generate_documentation(&all_members)
+        formatting::format_documentation(&all_members)
     }
 }
 
-pub use impl_extractor::extract_public_api;
-pub use impl_generator::generate_documentation;
-pub use impl_metadata::extract_metadata;
+pub use extraction::extract_public_api;
+pub use formatting::format_documentation;
+pub use metadata::extract_metadata;
