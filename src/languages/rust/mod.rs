@@ -2,6 +2,7 @@ pub mod public_members;
 pub mod extraction;
 pub mod formatting;
 pub mod metadata;
+pub mod parsing;
 
 use crate::types::{ApiRepresentation, Module, PackageMetadata, SourceFile};
 use std::any::Any;
@@ -10,6 +11,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use crate::analysers::LibraryAnalyser;
 use crate::error::LaibraryError;
+use crate::listing::get_source_file_paths;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct RustApi {
@@ -53,25 +55,9 @@ impl LibraryAnalyser for RustAnalyser {
 
     fn parse_source(&self, path: &Path) -> Result<Vec<SourceFile>, LaibraryError> {
         let mut sources = Vec::new();
-        if path.is_file() {
-            let content = std::fs::read_to_string(path)?;
-            sources.push(SourceFile {
-                path: path.to_path_buf(),
-                content,
-            });
-        } else {
-            for entry in walkdir::WalkDir::new(path)
-                .into_iter()
-                .filter_map(Result::ok)
-                .filter(|e| e.file_type().is_file())
-                .filter(|e| e.path().extension().map_or(false, |ext| ext == "rs"))
-            {
-                let content = std::fs::read_to_string(entry.path())?;
-                sources.push(SourceFile {
-                    path: entry.path().to_path_buf(),
-                    content,
-                });
-            }
+        let file_paths = get_source_file_paths(path.to_string_lossy().into_owned(), vec!["rs".to_string()])?;
+        for file_path in file_paths {
+            sources.push(parsing::parse_rust_file(Path::new(&file_path))?);
         }
         Ok(sources)
     }

@@ -11,6 +11,7 @@ pub mod error;
 pub mod formatting;
 pub mod languages;
 pub mod types;
+pub mod listing;
 
 /// Generate API documentation for a library in the specified language.
 ///

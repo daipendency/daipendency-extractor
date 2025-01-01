@@ -10,6 +10,8 @@ pub enum LaibraryError {
     Parse(String),
     /// Unsupported language errors
     UnsupportedLanguage(String),
+    /// Invalid path errors
+    InvalidPath(String),
 }
 
 impl fmt::Display for LaibraryError {
@@ -17,9 +19,8 @@ impl fmt::Display for LaibraryError {
         match self {
             LaibraryError::Io(e) => write!(f, "I/O Error: {}", e),
             LaibraryError::Parse(msg) => write!(f, "Parse Error: {}", msg),
-            LaibraryError::UnsupportedLanguage(lang) => {
-                write!(f, "Unsupported language: {}", lang)
-            }
+            LaibraryError::UnsupportedLanguage(lang) => write!(f, "Unsupported Language: {}", lang),
+            LaibraryError::InvalidPath(path) => write!(f, "Invalid Path: {}", path),
         }
     }
 }
