@@ -3,20 +3,14 @@ use crate::error::LaibraryError;
 use crate::types::SourceFile;
 use std::collections::HashMap;
 use std::path::Path;
-use tree_sitter::{Node, Parser};
-use tree_sitter_rust::LANGUAGE;
+use tree_sitter::Node;
 use super::public_members::{RustPublicMember, Function, Parameter, TypeParameter, Struct, Enum, Trait};
 
 pub fn extract_public_api(sources: &[SourceFile]) -> Result<RustApi, LaibraryError> {
-    let mut parser = Parser::new();
-    parser.set_language(&LANGUAGE.into()).map_err(|e| {
-        LaibraryError::Parse(format!("Error setting Rust language for parser: {}", e))
-    })?;
-
     let mut all_modules = HashMap::new();
 
     for source in sources {
-        if let Some(tree) = parser.parse(&source.content, None) {
+        if let Some(tree) = &source.tree {
             let root_node = tree.root_node();
             let module_path = determine_module_path(&source.path)?;
             let modules = extract_public_items(root_node, &source.content, module_path.as_deref())?;
@@ -562,6 +556,19 @@ mod tests {
     use super::*;
     use std::path::PathBuf;
     use crate::languages::rust::public_members::{Function, Parameter, TypeParameter};
+    use tree_sitter::Parser;
+    use tree_sitter_rust::LANGUAGE;
+
+    fn create_source_file(path: &str, content: &str) -> SourceFile {
+        let mut parser = Parser::new();
+        parser.set_language(&LANGUAGE.into()).unwrap();
+        let tree = parser.parse(content, None);
+        SourceFile {
+            path: PathBuf::from(path),
+            content: content.to_string(),
+            tree,
+        }
+    }
 
     mod module_path {
         use super::*;
@@ -604,16 +611,12 @@ mod tests {
 
         #[test]
         fn nested_modules_are_extracted() {
-            let source = SourceFile {
-                path: PathBuf::from("src/text/mod.rs"),
-                content: r#"
+            let source = create_source_file("src/text/mod.rs", r#"
 pub mod inner {
     pub fn nested_function() -> String {}
 }
 pub fn outer_function() -> i32 {}
-"#
-                .to_string(),
-            };
+"#);
 
             let result = extract_public_api(&[source]).unwrap();
             let modules = result.modules;
@@ -646,16 +649,12 @@ pub fn outer_function() -> i32 {}
 
         #[test]
         fn private_modules_are_ignored() {
-            let source = SourceFile {
-                path: PathBuf::from("src/text/mod.rs"),
-                content: r#"
+            let source = create_source_file("src/text/mod.rs", r#"
 mod private {
     pub fn private_function() -> String {}
 }
 pub fn public_function() -> i32 {}
-"#
-                .to_string(),
-            };
+"#);
 
             let result = extract_public_api(&[source]).unwrap();
             let modules = result.modules;
@@ -667,13 +666,9 @@ pub fn public_function() -> i32 {}
 
         #[test]
         fn empty_modules_are_included() {
-            let source = SourceFile {
-                path: PathBuf::from("src/text/mod.rs"),
-                content: r#"
+            let source = create_source_file("src/text/mod.rs", r#"
 pub mod empty {}
-"#
-                .to_string(),
-            };
+"#);
 
             let result = extract_public_api(&[source]).unwrap();
             let modules = result.modules;
@@ -688,10 +683,7 @@ pub mod empty {}
 
         #[test]
         fn basic_function_with_no_params() {
-            let source = SourceFile {
-                path: PathBuf::from("src/text.rs"),
-                content: r#"pub fn test_no_params() -> () {}"#.to_string(),
-            };
+            let source = create_source_file("src/text.rs", r#"pub fn test_no_params() -> () {}"#);
 
             let result = extract_public_api(&[source]).unwrap();
             let func = get_first_function(&result.modules, "text");
@@ -705,10 +697,7 @@ pub mod empty {}
 
         #[test]
         fn function_with_implicit_unit_return() {
-            let source = SourceFile {
-                path: PathBuf::from("src/text.rs"),
-                content: r#"pub fn test_no_return() {}"#.to_string(),
-            };
+            let source = create_source_file("src/text.rs", r#"pub fn test_no_return() {}"#);
 
             let result = extract_public_api(&[source]).unwrap();
             let func = get_first_function(&result.modules, "text");
@@ -720,10 +709,7 @@ pub mod empty {}
 
         #[test]
         fn function_with_parameters() {
-            let source = SourceFile {
-                path: PathBuf::from("src/text.rs"),
-                content: r#"pub fn test_params(a: i32, b: String) -> bool {}"#.to_string(),
-            };
+            let source = create_source_file("src/text.rs", r#"pub fn test_params(a: i32, b: String) -> bool {}"#);
 
             let result = extract_public_api(&[source]).unwrap();
             let func = get_first_function(&result.modules, "text");
@@ -738,10 +724,7 @@ pub mod empty {}
 
         #[test]
         fn function_with_generic_parameters() {
-            let source = SourceFile {
-                path: PathBuf::from("src/text.rs"),
-                content: r#"pub fn test_generics<T: std::fmt::Display>(a: T) -> T {}"#.to_string(),
-            };
+            let source = create_source_file("src/text.rs", r#"pub fn test_generics<T: std::fmt::Display>(a: T) -> T {}"#);
 
             let result = extract_public_api(&[source]).unwrap();
             let func = get_first_function(&result.modules, "text");
@@ -758,10 +741,7 @@ pub mod empty {}
 
         #[test]
         fn function_with_where_clause() {
-            let source = SourceFile {
-                path: PathBuf::from("src/text.rs"),
-                content: r#"pub fn test_where<T>(a: T) -> T where T: std::fmt::Display {}"#.to_string(),
-            };
+            let source = create_source_file("src/text.rs", r#"pub fn test_where<T>(a: T) -> T where T: std::fmt::Display {}"#);
 
             let result = extract_public_api(&[source]).unwrap();
             let func = get_first_function(&result.modules, "text");
@@ -776,10 +756,7 @@ pub mod empty {}
 
         #[test]
         fn function_with_complex_return_type() {
-            let source = SourceFile {
-                path: PathBuf::from("src/text.rs"),
-                content: r#"pub fn test_complex() -> Result<Vec<String>, Box<dyn std::error::Error>> {}"#.to_string(),
-            };
+            let source = create_source_file("src/text.rs", r#"pub fn test_complex() -> Result<Vec<String>, Box<dyn std::error::Error>> {}"#);
 
             let result = extract_public_api(&[source]).unwrap();
             let func = get_first_function(&result.modules, "text");
@@ -801,15 +778,11 @@ pub mod empty {}
 
         #[test]
         fn private_items_are_ignored() {
-            let source = SourceFile {
-                path: PathBuf::from("src/text/mod.rs"),
-                content: r#"
+            let source = create_source_file("src/text/mod.rs", r#"
 struct PrivateStruct {}
 fn private_function() {}
 pub fn public_function() -> () {}
-"#
-                .to_string(),
-            };
+"#);
 
             let result = extract_public_api(&[source]).unwrap();
             let modules = result.modules;
@@ -824,18 +797,14 @@ pub fn public_function() -> () {}
 
         #[test]
         fn lib_items_are_ignored() {
-            let source = SourceFile {
-                path: PathBuf::from("src/lib.rs"),
-                content: r#"
+            let source = create_source_file("src/lib.rs", r#"
 pub fn root_function() -> () {}
 pub struct RootStruct {}
 
 pub mod text {
     pub fn text_function() -> () {}
 }
-"#
-                .to_string(),
-            };
+"#);
 
             let result = extract_public_api(&[source]).unwrap();
             let modules = result.modules;
@@ -859,10 +828,7 @@ pub mod text {
 
         #[test]
         fn empty_source_file() {
-            let source = SourceFile {
-                path: PathBuf::from("src/empty.rs"),
-                content: String::new(),
-            };
+            let source = create_source_file("src/empty.rs", "");
 
             let result = extract_public_api(&[source]).unwrap();
             assert!(result.modules.is_empty());
@@ -870,10 +836,7 @@ pub mod text {
 
         #[test]
         fn whitespace_only_source() {
-            let source = SourceFile {
-                path: PathBuf::from("src/whitespace.rs"),
-                content: "    \n\t\n    ".to_string(),
-            };
+            let source = create_source_file("src/whitespace.rs", "    \n\t\n    ");
 
             let result = extract_public_api(&[source]).unwrap();
             assert!(result.modules.is_empty());
@@ -881,10 +844,7 @@ pub mod text {
 
         #[test]
         fn comments_only_source() {
-            let source = SourceFile {
-                path: PathBuf::from("src/comments.rs"),
-                content: "// Just a comment\n/* Another comment */".to_string(),
-            };
+            let source = create_source_file("src/comments.rs", "// Just a comment\n/* Another comment */");
 
             let result = extract_public_api(&[source]).unwrap();
             assert!(result.modules.is_empty());

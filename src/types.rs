@@ -1,5 +1,6 @@
 use std::any::Any;
 use std::fmt;
+use tree_sitter::Tree;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct PackageMetadata {
@@ -8,10 +9,11 @@ pub struct PackageMetadata {
     pub documentation: String,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug)]
 pub struct SourceFile {
     pub path: std::path::PathBuf,
     pub content: String,
+    pub tree: Option<Tree>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
