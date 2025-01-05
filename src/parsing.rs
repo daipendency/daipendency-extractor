@@ -19,7 +19,9 @@ pub fn parse_source_file(
         .set_language(parser_language)
         .map_err(|e| LaibraryError::Parse(format!("Error setting language for parser: {}", e)))?;
 
-    let tree = parser.parse(&content, None);
+    let tree = parser
+        .parse(&content, None)
+        .ok_or_else(|| LaibraryError::Parse("Failed to parse source file".to_string()))?;
 
     Ok(SourceFile {
         path: file_path.to_path_buf(),
@@ -59,11 +61,7 @@ mod tests {
 
         assert_eq!(result.content, content);
         assert_eq!(result.path, temp_file.path());
-        assert!(result.tree.is_some());
-        assert_eq!(
-            result.tree.as_ref().unwrap().root_node().kind(),
-            "source_file"
-        );
+        assert_eq!(result.tree.root_node().kind(), "source_file");
     }
 
     #[test]
@@ -92,11 +90,7 @@ mod tests {
 
         assert!(result.content.is_empty());
         assert_eq!(result.path, temp_file.path());
-        assert!(result.tree.is_some());
-        assert_eq!(
-            result.tree.as_ref().unwrap().root_node().kind(),
-            "source_file"
-        );
+        assert_eq!(result.tree.root_node().kind(), "source_file");
     }
 
     #[test]
@@ -107,8 +101,7 @@ mod tests {
 
         let result = parse_source_file(temp_file.path(), &LANGUAGE.into()).unwrap();
 
-        assert!(result.tree.is_some());
-        let root_node = result.tree.as_ref().unwrap().root_node();
+        let root_node = result.tree.root_node();
         assert_eq!(root_node.kind(), "source_file");
         assert!(!root_node.has_error());
     }
@@ -135,11 +128,7 @@ mod tests {
         assert_eq!(results.len(), 3);
         for (result, content) in results.iter().zip(contents.iter()) {
             assert_eq!(result.content, *content);
-            assert!(result.tree.is_some());
-            assert_eq!(
-                result.tree.as_ref().unwrap().root_node().kind(),
-                "source_file"
-            );
+            assert_eq!(result.tree.root_node().kind(), "source_file");
         }
     }
 

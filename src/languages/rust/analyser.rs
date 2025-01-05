@@ -1,16 +1,19 @@
-use crate::analysers::LibraryAnalyser;
-use crate::error::LaibraryError;
-use crate::types::{PackageMetadata, SourceFile};
-use std::path::Path;
-use tree_sitter::Language;
-use tree_sitter_rust::LANGUAGE;
-
 use super::extraction;
 use super::formatting;
 use super::metadata;
-use super::RustApi;
+use crate::analysers::Analyser;
+use crate::error::LaibraryError;
+use crate::types::{Module, PackageMetadata, SourceFile};
+use std::path::Path;
+use tree_sitter::Language;
 
 pub struct RustAnalyser;
+
+impl RustAnalyser {
+    pub fn new() -> Self {
+        Self
+    }
+}
 
 impl Default for RustAnalyser {
     fn default() -> Self {
@@ -18,36 +21,27 @@ impl Default for RustAnalyser {
     }
 }
 
-impl RustAnalyser {
-    pub fn new() -> Self {
-        RustAnalyser
-    }
-}
-
-impl LibraryAnalyser for RustAnalyser {
-    type Api = RustApi;
-
-    fn get_parser_language(&self) -> Language {
-        LANGUAGE.into()
-    }
-
+impl Analyser for RustAnalyser {
     fn get_file_extensions(&self) -> Vec<String> {
         vec!["rs".to_string()]
+    }
+
+    fn get_parser_language(&self) -> Language {
+        tree_sitter_rust::LANGUAGE.into()
     }
 
     fn get_package_metadata(&self, path: &Path) -> Result<PackageMetadata, LaibraryError> {
         metadata::extract_metadata(path)
     }
 
-    fn extract_public_api(&self, sources: &[SourceFile]) -> Result<Self::Api, LaibraryError> {
-        extraction::extract_public_api(sources)
+    fn extract_public_api<'a>(
+        &self,
+        sources: &'a [SourceFile],
+    ) -> Result<Vec<Module<'a>>, LaibraryError> {
+        extraction::extract_modules(sources)
     }
 
-    fn format_documentation(&self, api: &Self::Api) -> Result<String, LaibraryError> {
-        let mut all_members = Vec::new();
-        for members in api.modules.values() {
-            all_members.extend(members.iter().cloned());
-        }
-        formatting::format_documentation(&all_members)
+    fn format_module(&self, module: &Module) -> Result<String, LaibraryError> {
+        formatting::format_module(module)
     }
 }

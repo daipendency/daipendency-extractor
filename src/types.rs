@@ -1,7 +1,6 @@
-use std::fmt;
-use tree_sitter::Tree;
+use tree_sitter::{Node, Tree};
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug)]
 pub struct PackageMetadata {
     pub name: String,
     pub version: String,
@@ -12,15 +11,18 @@ pub struct PackageMetadata {
 pub struct SourceFile {
     pub path: std::path::PathBuf,
     pub content: String,
-    pub tree: Option<Tree>,
+    pub tree: Tree,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct Module<T: fmt::Display> {
+#[derive(Debug)]
+pub struct Module<'a> {
     pub name: String,
-    pub public_members: Vec<T>,
+    pub symbols: Vec<Symbol<'a>>,
 }
 
-pub trait ApiRepresentation {
-    fn modules(&self) -> Vec<Module<Box<dyn fmt::Display>>>;
+#[derive(Debug)]
+pub struct Symbol<'a> {
+    pub name: String,
+    pub node: Node<'a>,
+    pub source_code: String,
 }

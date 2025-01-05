@@ -1,20 +1,15 @@
-mod rust;
+pub mod rust;
 
-use crate::analysers::LibraryAnalyser;
+use crate::analysers::Analyser;
 use crate::error::LaibraryError;
-use crate::languages::rust::{RustAnalyser, RustApi};
+use crate::languages::rust::RustAnalyser;
 
-type AnalyserMapping = (
-    &'static str,
-    fn() -> Box<dyn LibraryAnalyser<Api = RustApi>>,
-);
+type AnalyserMapping = (&'static str, fn() -> Box<dyn Analyser>);
 
 const LANGUAGES: [AnalyserMapping; 1] = [("rust", || Box::from(RustAnalyser))];
 
 /// Get an analyser for the specified language
-pub fn get_analyser(
-    language: &str,
-) -> Result<Box<dyn LibraryAnalyser<Api = RustApi>>, LaibraryError> {
+pub fn get_analyser(language: &str) -> Result<Box<dyn Analyser>, LaibraryError> {
     LANGUAGES
         .iter()
         .find(|(name, _)| *name == language)
