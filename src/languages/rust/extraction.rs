@@ -1,10 +1,12 @@
+use super::public_members::{
+    Enum, Function, Parameter, RustPublicMember, Struct, Trait, TypeParameter,
+};
 use super::RustApi;
 use crate::error::LaibraryError;
 use crate::types::SourceFile;
 use std::collections::HashMap;
 use std::path::Path;
 use tree_sitter::Node;
-use super::public_members::{RustPublicMember, Function, Parameter, TypeParameter, Struct, Enum, Trait};
 
 pub fn extract_public_api(sources: &[SourceFile]) -> Result<RustApi, LaibraryError> {
     let mut all_modules = HashMap::new();
@@ -23,11 +25,14 @@ pub fn extract_public_api(sources: &[SourceFile]) -> Result<RustApi, LaibraryErr
         }
     }
 
-    Ok(RustApi { modules: all_modules })
+    Ok(RustApi {
+        modules: all_modules,
+    })
 }
 
 fn determine_module_path(file_path: &Path) -> Result<Option<String>, LaibraryError> {
-    let file_name = file_path.file_name()
+    let file_name = file_path
+        .file_name()
         .and_then(|f| f.to_str())
         .ok_or_else(|| LaibraryError::Parse("Invalid file name".to_string()))?;
 
@@ -84,15 +89,19 @@ fn extract_public_items(
                         Some(path) => format!("{}::{}", path, mod_name),
                         None => mod_name.clone(),
                     };
-                    
+
                     // Process inline module contents if present
                     for mod_child in child.children(&mut child.walk()) {
                         if mod_child.kind() == "declaration_list" {
-                            let nested_modules = extract_public_items(mod_child, source_code, Some(&new_module_path))?;
+                            let nested_modules = extract_public_items(
+                                mod_child,
+                                source_code,
+                                Some(&new_module_path),
+                            )?;
                             modules.extend(nested_modules);
                         }
                     }
-                    
+
                     // Always add the module to the map, even if it's empty
                     if !modules.contains_key(&new_module_path) {
                         modules.insert(new_module_path, Vec::new());
@@ -137,10 +146,14 @@ fn extract_mod_name(node: &Node, source_code: &str) -> Result<String, LaibraryEr
             return child
                 .utf8_text(source_code.as_bytes())
                 .map(|s| s.to_string())
-                .map_err(|e| LaibraryError::Parse(format!("Failed to extract module name: {}", e)));
+                .map_err(|e| {
+                    LaibraryError::Parse(format!("Failed to extract module name: {}", e))
+                });
         }
     }
-    Err(LaibraryError::Parse("Failed to find module name".to_string()))
+    Err(LaibraryError::Parse(
+        "Failed to find module name".to_string(),
+    ))
 }
 
 fn is_public(node: &Node, source_code: &str) -> bool {
@@ -155,7 +168,10 @@ fn is_public(node: &Node, source_code: &str) -> bool {
     false
 }
 
-fn extract_item_signature(node: &Node, source_code: &str) -> Result<RustPublicMember, LaibraryError> {
+fn extract_item_signature(
+    node: &Node,
+    source_code: &str,
+) -> Result<RustPublicMember, LaibraryError> {
     match node.kind() {
         "function_item" => extract_function_signature(node, source_code),
         "struct_item" => {
@@ -170,7 +186,9 @@ fn extract_item_signature(node: &Node, source_code: &str) -> Result<RustPublicMe
                 }
             }
             if name.is_empty() {
-                return Err(LaibraryError::Parse("Failed to find struct name".to_string()));
+                return Err(LaibraryError::Parse(
+                    "Failed to find struct name".to_string(),
+                ));
             }
             Ok(RustPublicMember::Struct(Struct {
                 name,
@@ -212,7 +230,9 @@ fn extract_item_signature(node: &Node, source_code: &str) -> Result<RustPublicMe
                 }
             }
             if name.is_empty() {
-                return Err(LaibraryError::Parse("Failed to find trait name".to_string()));
+                return Err(LaibraryError::Parse(
+                    "Failed to find trait name".to_string(),
+                ));
             }
             Ok(RustPublicMember::Trait(Trait {
                 name,
@@ -232,7 +252,10 @@ fn extract_item_signature(node: &Node, source_code: &str) -> Result<RustPublicMe
     }
 }
 
-fn extract_function_signature(node: &Node, source_code: &str) -> Result<RustPublicMember, LaibraryError> {
+fn extract_function_signature(
+    node: &Node,
+    source_code: &str,
+) -> Result<RustPublicMember, LaibraryError> {
     let mut cursor = node.walk();
     let mut name = String::new();
     let mut parameters = Vec::new();
@@ -325,7 +348,10 @@ fn extract_function_signature(node: &Node, source_code: &str) -> Result<RustPubl
     }))
 }
 
-fn extract_type_parameters(node: &Node, source_code: &str) -> Result<Vec<TypeParameter>, LaibraryError> {
+fn extract_type_parameters(
+    node: &Node,
+    source_code: &str,
+) -> Result<Vec<TypeParameter>, LaibraryError> {
     let mut type_parameters = Vec::new();
 
     for child in node.children(&mut node.walk()) {
@@ -438,17 +464,17 @@ fn extract_type(node: &Node, source_code: &str) -> Result<String, LaibraryError>
                 type_str.pop(); // Remove trailing space
                 return Ok(type_str);
             }
-            _ => continue
+            _ => continue,
         }
     }
-    
+
     Ok("".to_string())
 }
 
 fn extract_generic_type(node: &Node, source_code: &str) -> Result<String, LaibraryError> {
     let mut type_str = String::new();
     let mut cursor = node.walk();
-    
+
     // Get the base type (e.g., "Result")
     for child in node.children(&mut cursor) {
         if child.kind() == "type_identifier" {
@@ -554,8 +580,8 @@ fn extract_generic_type(node: &Node, source_code: &str) -> Result<String, Laibra
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
     use crate::languages::rust::public_members::{Function, Parameter, TypeParameter};
+    use std::path::PathBuf;
     use tree_sitter::Parser;
     use tree_sitter_rust::LANGUAGE;
 
@@ -611,12 +637,15 @@ mod tests {
 
         #[test]
         fn nested_modules_are_extracted() {
-            let source = create_source_file("src/text/mod.rs", r#"
+            let source = create_source_file(
+                "src/text/mod.rs",
+                r#"
 pub mod inner {
     pub fn nested_function() -> String {}
 }
 pub fn outer_function() -> i32 {}
-"#);
+"#,
+            );
 
             let result = extract_public_api(&[source]).unwrap();
             let modules = result.modules;
@@ -649,12 +678,15 @@ pub fn outer_function() -> i32 {}
 
         #[test]
         fn private_modules_are_ignored() {
-            let source = create_source_file("src/text/mod.rs", r#"
+            let source = create_source_file(
+                "src/text/mod.rs",
+                r#"
 mod private {
     pub fn private_function() -> String {}
 }
 pub fn public_function() -> i32 {}
-"#);
+"#,
+            );
 
             let result = extract_public_api(&[source]).unwrap();
             let modules = result.modules;
@@ -666,9 +698,12 @@ pub fn public_function() -> i32 {}
 
         #[test]
         fn empty_modules_are_included() {
-            let source = create_source_file("src/text/mod.rs", r#"
+            let source = create_source_file(
+                "src/text/mod.rs",
+                r#"
 pub mod empty {}
-"#);
+"#,
+            );
 
             let result = extract_public_api(&[source]).unwrap();
             let modules = result.modules;
@@ -709,63 +744,102 @@ pub mod empty {}
 
         #[test]
         fn function_with_parameters() {
-            let source = create_source_file("src/text.rs", r#"pub fn test_params(a: i32, b: String) -> bool {}"#);
+            let source = create_source_file(
+                "src/text.rs",
+                r#"pub fn test_params(a: i32, b: String) -> bool {}"#,
+            );
 
             let result = extract_public_api(&[source]).unwrap();
             let func = get_first_function(&result.modules, "text");
 
             assert_eq!(func.name, "test_params");
-            assert_eq!(func.parameters, vec![
-                Parameter { name: "a".to_string(), type_name: "i32".to_string() },
-                Parameter { name: "b".to_string(), type_name: "String".to_string() },
-            ]);
+            assert_eq!(
+                func.parameters,
+                vec![
+                    Parameter {
+                        name: "a".to_string(),
+                        type_name: "i32".to_string()
+                    },
+                    Parameter {
+                        name: "b".to_string(),
+                        type_name: "String".to_string()
+                    },
+                ]
+            );
             assert_eq!(func.return_type, Some("bool".to_string()));
         }
 
         #[test]
         fn function_with_generic_parameters() {
-            let source = create_source_file("src/text.rs", r#"pub fn test_generics<T: std::fmt::Display>(a: T) -> T {}"#);
+            let source = create_source_file(
+                "src/text.rs",
+                r#"pub fn test_generics<T: std::fmt::Display>(a: T) -> T {}"#,
+            );
 
             let result = extract_public_api(&[source]).unwrap();
             let func = get_first_function(&result.modules, "text");
 
             assert_eq!(func.name, "test_generics");
-            assert_eq!(func.parameters, vec![
-                Parameter { name: "a".to_string(), type_name: "T".to_string() },
-            ]);
+            assert_eq!(
+                func.parameters,
+                vec![Parameter {
+                    name: "a".to_string(),
+                    type_name: "T".to_string()
+                },]
+            );
             assert_eq!(func.return_type, Some("T".to_string()));
-            assert_eq!(func.type_parameters, vec![
-                TypeParameter { name: "T".to_string(), bounds: vec!["std::fmt::Display".to_string()] }
-            ]);
+            assert_eq!(
+                func.type_parameters,
+                vec![TypeParameter {
+                    name: "T".to_string(),
+                    bounds: vec!["std::fmt::Display".to_string()]
+                }]
+            );
         }
 
         #[test]
         fn function_with_where_clause() {
-            let source = create_source_file("src/text.rs", r#"pub fn test_where<T>(a: T) -> T where T: std::fmt::Display {}"#);
+            let source = create_source_file(
+                "src/text.rs",
+                r#"pub fn test_where<T>(a: T) -> T where T: std::fmt::Display {}"#,
+            );
 
             let result = extract_public_api(&[source]).unwrap();
             let func = get_first_function(&result.modules, "text");
 
             assert_eq!(func.name, "test_where");
-            assert_eq!(func.parameters, vec![
-                Parameter { name: "a".to_string(), type_name: "T".to_string() },
-            ]);
+            assert_eq!(
+                func.parameters,
+                vec![Parameter {
+                    name: "a".to_string(),
+                    type_name: "T".to_string()
+                },]
+            );
             assert_eq!(func.return_type, Some("T".to_string()));
             assert_eq!(func.where_clause, Some("T: std::fmt::Display".to_string()));
         }
 
         #[test]
         fn function_with_complex_return_type() {
-            let source = create_source_file("src/text.rs", r#"pub fn test_complex() -> Result<Vec<String>, Box<dyn std::error::Error>> {}"#);
+            let source = create_source_file(
+                "src/text.rs",
+                r#"pub fn test_complex() -> Result<Vec<String>, Box<dyn std::error::Error>> {}"#,
+            );
 
             let result = extract_public_api(&[source]).unwrap();
             let func = get_first_function(&result.modules, "text");
 
             assert_eq!(func.name, "test_complex");
-            assert_eq!(func.return_type, Some("Result<Vec<String>, Box<dyn std::error::Error>>".to_string()));
+            assert_eq!(
+                func.return_type,
+                Some("Result<Vec<String>, Box<dyn std::error::Error>>".to_string())
+            );
         }
 
-        fn get_first_function<'a>(modules: &'a HashMap<String, Vec<RustPublicMember>>, module_name: &str) -> &'a Function {
+        fn get_first_function<'a>(
+            modules: &'a HashMap<String, Vec<RustPublicMember>>,
+            module_name: &str,
+        ) -> &'a Function {
             match &modules.get(module_name).unwrap()[0] {
                 RustPublicMember::Function(f) => f,
                 _ => panic!("Expected a function"),
@@ -778,18 +852,24 @@ pub mod empty {}
 
         #[test]
         fn private_items_are_ignored() {
-            let source = create_source_file("src/text/mod.rs", r#"
+            let source = create_source_file(
+                "src/text/mod.rs",
+                r#"
 struct PrivateStruct {}
 fn private_function() {}
 pub fn public_function() -> () {}
-"#);
+"#,
+            );
 
             let result = extract_public_api(&[source]).unwrap();
             let modules = result.modules;
 
             let test_module_items = modules.get("text").unwrap();
             assert_eq!(test_module_items.len(), 1);
-            assert!(matches!(test_module_items[0], RustPublicMember::Function(_)));
+            assert!(matches!(
+                test_module_items[0],
+                RustPublicMember::Function(_)
+            ));
             if let RustPublicMember::Function(func) = &test_module_items[0] {
                 assert_eq!(func.name, "public_function");
             }
@@ -797,20 +877,23 @@ pub fn public_function() -> () {}
 
         #[test]
         fn lib_items_are_ignored() {
-            let source = create_source_file("src/lib.rs", r#"
+            let source = create_source_file(
+                "src/lib.rs",
+                r#"
 pub fn root_function() -> () {}
 pub struct RootStruct {}
 
 pub mod text {
     pub fn text_function() -> () {}
 }
-"#);
+"#,
+            );
 
             let result = extract_public_api(&[source]).unwrap();
             let modules = result.modules;
 
             assert!(!modules.contains_key(""));
-            
+
             if let Some(text_module) = modules.get("text") {
                 assert_eq!(text_module.len(), 1);
                 assert!(matches!(text_module[0], RustPublicMember::Function(_)));
@@ -844,11 +927,13 @@ pub mod text {
 
         #[test]
         fn comments_only_source() {
-            let source = create_source_file("src/comments.rs", "// Just a comment\n/* Another comment */");
+            let source = create_source_file(
+                "src/comments.rs",
+                "// Just a comment\n/* Another comment */",
+            );
 
             let result = extract_public_api(&[source]).unwrap();
             assert!(result.modules.is_empty());
         }
     }
 }
-

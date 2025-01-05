@@ -1,17 +1,17 @@
-pub mod public_members;
 pub mod extraction;
 pub mod formatting;
 pub mod metadata;
-pub mod parsing;
+pub mod public_members;
 
-use crate::types::{ApiRepresentation, Module, PackageMetadata, SourceFile};
-use std::any::Any;
-use public_members::RustPublicMember;
-use std::collections::HashMap;
-use std::path::Path;
 use crate::analysers::LibraryAnalyser;
 use crate::error::LaibraryError;
-use crate::listing::get_source_file_paths;
+use crate::types::{ApiRepresentation, Module, PackageMetadata, SourceFile};
+use public_members::RustPublicMember;
+use std::any::Any;
+use std::collections::HashMap;
+use std::path::Path;
+use tree_sitter::Language;
+use tree_sitter_rust::LANGUAGE;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct RustApi {
@@ -26,13 +26,12 @@ impl ApiRepresentation for RustApi {
     fn modules(&self) -> Vec<Module<Box<dyn std::fmt::Display>>> {
         self.modules
             .iter()
-            .map(|(name, members)| {
-                Module {
-                    name: name.clone(),
-                    public_members: members.iter()
-                        .map(|m| Box::new(m.clone()) as Box<dyn std::fmt::Display>)
-                        .collect(),
-                }
+            .map(|(name, members)| Module {
+                name: name.clone(),
+                public_members: members
+                    .iter()
+                    .map(|m| Box::new(m.clone()) as Box<dyn std::fmt::Display>)
+                    .collect(),
             })
             .collect()
     }
@@ -49,17 +48,16 @@ impl RustAnalyser {
 impl LibraryAnalyser for RustAnalyser {
     type Api = RustApi;
 
-    fn extract_metadata(&self, path: &Path) -> Result<PackageMetadata, LaibraryError> {
-        metadata::extract_metadata(path)
+    fn get_parser_language(&self) -> Language {
+        LANGUAGE.into()
     }
 
-    fn parse_source(&self, path: &Path) -> Result<Vec<SourceFile>, LaibraryError> {
-        let mut sources = Vec::new();
-        let file_paths = get_source_file_paths(path.to_string_lossy().into_owned(), vec!["rs".to_string()])?;
-        for file_path in file_paths {
-            sources.push(parsing::parse_rust_file(Path::new(&file_path))?);
-        }
-        Ok(sources)
+    fn get_extensions(&self) -> Vec<String> {
+        vec!["rs".to_string()]
+    }
+
+    fn extract_metadata(&self, path: &Path) -> Result<PackageMetadata, LaibraryError> {
+        metadata::extract_metadata(path)
     }
 
     fn extract_public_api(&self, sources: &[SourceFile]) -> Result<Self::Api, LaibraryError> {

@@ -7,7 +7,7 @@ pub fn format_library_context<T: Display>(
     modules: &[Module<T>],
 ) -> Result<String, LaibraryError> {
     let mut api_content = String::new();
-    
+
     for module in modules {
         api_content.push_str(&format!(
             r#"        <module name="{name}">
@@ -15,7 +15,9 @@ pub fn format_library_context<T: Display>(
         </module>
 "#,
             name = module.name,
-            content = module.public_members.iter()
+            content = module
+                .public_members
+                .iter()
                 .map(|m| m.to_string())
                 .collect::<Vec<_>>()
                 .join("\n")

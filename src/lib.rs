@@ -3,6 +3,8 @@
 use crate::analysers::get_analyser;
 use crate::error::LaibraryError;
 use crate::formatting::format_library_context;
+use crate::listing::get_source_file_paths;
+use crate::parsing::parse_source_files;
 use crate::types::ApiRepresentation;
 use std::path::Path;
 
@@ -10,8 +12,9 @@ pub mod analysers;
 pub mod error;
 pub mod formatting;
 pub mod languages;
-pub mod types;
 pub mod listing;
+pub mod parsing;
+pub mod types;
 
 /// Generate API documentation for a library in the specified language.
 ///
@@ -26,7 +29,11 @@ pub mod listing;
 pub fn generate_documentation(language: &str, path: &Path) -> Result<String, LaibraryError> {
     let analyser = get_analyser(language)?;
     let metadata = analyser.extract_metadata(path)?;
-    let sources = analyser.parse_source(path)?;
+    let file_paths = get_source_file_paths(
+        path.to_string_lossy().into_owned(),
+        analyser.get_extensions(),
+    )?;
+    let sources = parse_source_files(&file_paths, &analyser.get_parser_language())?;
     let api = analyser.extract_public_api(&sources)?;
     let modules = api.modules();
 

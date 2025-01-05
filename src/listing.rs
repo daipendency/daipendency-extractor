@@ -1,11 +1,16 @@
+use crate::error::LaibraryError;
 use std::path::Path;
 use walkdir::WalkDir;
-use crate::error::LaibraryError;
 
-pub fn get_source_file_paths(directory_path: String, extensions: Vec<String>) -> Result<Vec<String>, LaibraryError> {
+pub fn get_source_file_paths(
+    directory_path: String,
+    extensions: Vec<String>,
+) -> Result<Vec<String>, LaibraryError> {
     let path = Path::new(&directory_path);
     if path.is_file() {
-        return Err(LaibraryError::InvalidPath("Expected a directory".to_string()));
+        return Err(LaibraryError::InvalidPath(
+            "Expected a directory".to_string(),
+        ));
     }
 
     let paths: Vec<String> = WalkDir::new(path)
@@ -38,7 +43,7 @@ mod tests {
 
         let result = get_source_file_paths(
             file_path.to_str().unwrap().to_string(),
-            vec!["txt".to_string()]
+            vec!["txt".to_string()],
         );
 
         assert!(matches!(result, Err(LaibraryError::InvalidPath(_))));
@@ -47,12 +52,12 @@ mod tests {
     #[test]
     fn test_get_source_file_paths_finds_matching_extensions() {
         let temp_dir = TempDir::new().unwrap();
-        
+
         // Create test files
         File::create(temp_dir.path().join("test1.rs")).unwrap();
         File::create(temp_dir.path().join("test2.rs")).unwrap();
         File::create(temp_dir.path().join("test.txt")).unwrap();
-        
+
         // Create a subdirectory with more files
         let sub_dir = temp_dir.path().join("subdir");
         fs::create_dir(&sub_dir).unwrap();
@@ -60,8 +65,9 @@ mod tests {
 
         let paths = get_source_file_paths(
             temp_dir.path().to_str().unwrap().to_string(),
-            vec!["rs".to_string()]
-        ).unwrap();
+            vec!["rs".to_string()],
+        )
+        .unwrap();
 
         assert_eq!(paths.len(), 3);
         assert!(paths.iter().all(|p| p.ends_with(".rs")));
@@ -73,8 +79,9 @@ mod tests {
 
         let paths = get_source_file_paths(
             temp_dir.path().to_str().unwrap().to_string(),
-            vec!["rs".to_string()]
-        ).unwrap();
+            vec!["rs".to_string()],
+        )
+        .unwrap();
 
         assert!(paths.is_empty());
     }
@@ -82,15 +89,16 @@ mod tests {
     #[test]
     fn test_get_source_file_paths_multiple_extensions() {
         let temp_dir = TempDir::new().unwrap();
-        
+
         File::create(temp_dir.path().join("test1.rs")).unwrap();
         File::create(temp_dir.path().join("test2.txt")).unwrap();
-        
+
         let paths = get_source_file_paths(
             temp_dir.path().to_str().unwrap().to_string(),
-            vec!["rs".to_string(), "txt".to_string()]
-        ).unwrap();
+            vec!["rs".to_string(), "txt".to_string()],
+        )
+        .unwrap();
 
         assert_eq!(paths.len(), 2);
     }
-} 
+}

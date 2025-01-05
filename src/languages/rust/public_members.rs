@@ -109,32 +109,45 @@ impl fmt::Display for Function {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // Format type parameters
         let type_params = if !self.type_parameters.is_empty() {
-            format!("<{}>", self.type_parameters.iter()
-                .map(|tp| tp.to_string())
-                .collect::<Vec<_>>()
-                .join(", "))
+            format!(
+                "<{}>",
+                self.type_parameters
+                    .iter()
+                    .map(|tp| tp.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
         } else {
             String::new()
         };
 
         // Format parameters
-        let params = self.parameters.iter()
+        let params = self
+            .parameters
+            .iter()
             .map(|p| format!("{}: {}", p.name, p.type_name))
             .collect::<Vec<_>>()
             .join(", ");
 
         // Format return type
-        let return_type = self.return_type.as_ref()
+        let return_type = self
+            .return_type
+            .as_ref()
             .map(|rt| format!(" -> {}", rt))
             .unwrap_or_default();
 
         // Format where clause
-        let where_clause = self.where_clause.as_ref()
+        let where_clause = self
+            .where_clause
+            .as_ref()
             .map(|wc| format!(" where {}", wc))
             .unwrap_or_default();
 
-        write!(f, "pub fn {}{}({}){}{};", 
-            self.name, type_params, params, return_type, where_clause)
+        write!(
+            f,
+            "pub fn {}{}({}){}{};",
+            self.name, type_params, params, return_type, where_clause
+        )
     }
 }
 
@@ -152,19 +165,30 @@ impl fmt::Display for Struct {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // Format type parameters
         let type_params = if !self.type_parameters.is_empty() {
-            format!("<{}>", self.type_parameters.iter()
-                .map(|tp| tp.to_string())
-                .collect::<Vec<_>>()
-                .join(", "))
+            format!(
+                "<{}>",
+                self.type_parameters
+                    .iter()
+                    .map(|tp| tp.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
         } else {
             String::new()
         };
 
         // Format fields
-        let fields = self.fields.iter()
+        let fields = self
+            .fields
+            .iter()
             .map(|field| {
                 if let Some(doc) = &field.doc_comment {
-                    format!("{}\n    pub {}: {}", doc.trim(), field.name, field.type_name)
+                    format!(
+                        "{}\n    pub {}: {}",
+                        doc.trim(),
+                        field.name,
+                        field.type_name
+                    )
                 } else {
                     format!("    pub {}: {}", field.name, field.type_name)
                 }
@@ -172,7 +196,11 @@ impl fmt::Display for Struct {
             .collect::<Vec<_>>()
             .join(",\n");
 
-        write!(f, "pub struct {}{} {{\n{}\n}}", self.name, type_params, fields)
+        write!(
+            f,
+            "pub struct {}{} {{\n{}\n}}",
+            self.name, type_params, fields
+        )
     }
 }
 
@@ -180,31 +208,42 @@ impl fmt::Display for Enum {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // Format type parameters
         let type_params = if !self.type_parameters.is_empty() {
-            format!("<{}>", self.type_parameters.iter()
-                .map(|tp| tp.to_string())
-                .collect::<Vec<_>>()
-                .join(", "))
+            format!(
+                "<{}>",
+                self.type_parameters
+                    .iter()
+                    .map(|tp| tp.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
         } else {
             String::new()
         };
 
         // Format variants
-        let variants = self.variants.iter()
+        let variants = self
+            .variants
+            .iter()
             .map(|variant| {
                 let fields = match variant.fields.len() {
                     0 => String::new(),
-                    _ => format!("({})", variant.fields.iter()
-                        .map(|field| {
-                            if let Some(name) = &field.name {
-                                format!("{}: {}", name, field.type_name)
-                            } else {
-                                field.type_name.clone()
-                            }
-                        })
-                        .collect::<Vec<_>>()
-                        .join(", "))
+                    _ => format!(
+                        "({})",
+                        variant
+                            .fields
+                            .iter()
+                            .map(|field| {
+                                if let Some(name) = &field.name {
+                                    format!("{}: {}", name, field.type_name)
+                                } else {
+                                    field.type_name.clone()
+                                }
+                            })
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    ),
                 };
-                
+
                 if let Some(doc) = &variant.doc_comment {
                     format!("{}\n    {}{}", doc.trim(), variant.name, fields)
                 } else {
@@ -214,7 +253,11 @@ impl fmt::Display for Enum {
             .collect::<Vec<_>>()
             .join(",\n");
 
-        write!(f, "pub enum {}{} {{\n{}\n}}", self.name, type_params, variants)
+        write!(
+            f,
+            "pub enum {}{} {{\n{}\n}}",
+            self.name, type_params, variants
+        )
     }
 }
 
@@ -222,21 +265,31 @@ impl fmt::Display for Trait {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // Format type parameters
         let type_params = if !self.type_parameters.is_empty() {
-            format!("<{}>", self.type_parameters.iter()
-                .map(|tp| tp.to_string())
-                .collect::<Vec<_>>()
-                .join(", "))
+            format!(
+                "<{}>",
+                self.type_parameters
+                    .iter()
+                    .map(|tp| tp.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
         } else {
             String::new()
         };
 
         // Format methods
-        let methods = self.methods.iter()
+        let methods = self
+            .methods
+            .iter()
             .map(|method| method.to_string())
             .collect::<Vec<_>>()
             .join("\n    ");
 
-        write!(f, "pub trait {}{} {{\n    {}\n}}", self.name, type_params, methods)
+        write!(
+            f,
+            "pub trait {}{} {{\n    {}\n}}",
+            self.name, type_params, methods
+        )
     }
 }
 
