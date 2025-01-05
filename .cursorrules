@@ -1,7 +1,7 @@
 # General requirements
 
 - At the start of each task, read the README.md files from the project and the relevant directories to gather enough context to complete the task.
-- Do NOT ever write unsafe Rust code.
+- Do NOT ever write unsafe Rust code; that includes `extern` blocks.
 - Use British grammar and spelling.
 
 # Dependencies
