@@ -6,7 +6,6 @@ pub mod public_members;
 
 use crate::types::{ApiRepresentation, Module};
 use public_members::RustPublicMember;
-use std::any::Any;
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -15,10 +14,6 @@ pub struct RustApi {
 }
 
 impl ApiRepresentation for RustApi {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-
     fn modules(&self) -> Vec<Module<Box<dyn std::fmt::Display>>> {
         self.modules
             .iter()

@@ -1,4 +1,3 @@
-use std::any::Any;
 use std::fmt;
 use tree_sitter::Tree;
 
@@ -23,6 +22,5 @@ pub struct Module<T: fmt::Display> {
 }
 
 pub trait ApiRepresentation {
-    fn as_any(&self) -> &dyn Any;
     fn modules(&self) -> Vec<Module<Box<dyn fmt::Display>>>;
 }

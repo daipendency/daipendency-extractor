@@ -1,20 +1,20 @@
 //! Main library module for generating library API documentation.
 
-use crate::analysers::get_analyser;
 use crate::error::LaibraryError;
 use crate::formatting::format_library_context;
+use crate::languages::get_analyser;
 use crate::listing::get_source_file_paths;
 use crate::parsing::parse_source_files;
 use crate::types::ApiRepresentation;
 use std::path::Path;
 
-pub mod analysers;
+mod analysers;
 pub mod error;
-pub mod formatting;
-pub mod languages;
-pub mod listing;
-pub mod parsing;
-pub mod types;
+mod formatting;
+mod languages;
+mod listing;
+mod parsing;
+mod types;
 
 /// Generate API documentation for a library in the specified language.
 ///
