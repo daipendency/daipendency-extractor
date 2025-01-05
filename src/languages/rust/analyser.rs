@@ -35,7 +35,7 @@ impl LibraryAnalyser for RustAnalyser {
         vec!["rs".to_string()]
     }
 
-    fn extract_metadata(&self, path: &Path) -> Result<PackageMetadata, LaibraryError> {
+    fn get_package_metadata(&self, path: &Path) -> Result<PackageMetadata, LaibraryError> {
         metadata::extract_metadata(path)
     }
 

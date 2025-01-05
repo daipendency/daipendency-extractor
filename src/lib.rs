@@ -28,7 +28,7 @@ pub mod types;
 /// Returns a Result containing the generated documentation as a string, or an error if something went wrong.
 pub fn generate_documentation(language: &str, path: &Path) -> Result<String, LaibraryError> {
     let analyser = get_analyser(language)?;
-    let metadata = analyser.extract_metadata(path)?;
+    let metadata = analyser.get_package_metadata(path)?;
     let file_paths = get_source_file_paths(
         path.to_string_lossy().into_owned(),
         analyser.get_file_extensions(),
