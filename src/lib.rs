@@ -31,7 +31,7 @@ pub fn generate_documentation(language: &str, path: &Path) -> Result<String, Lai
     let metadata = analyser.extract_metadata(path)?;
     let file_paths = get_source_file_paths(
         path.to_string_lossy().into_owned(),
-        analyser.get_extensions(),
+        analyser.get_file_extensions(),
     )?;
     let sources = parse_source_files(&file_paths, &analyser.get_parser_language())?;
     let api = analyser.extract_public_api(&sources)?;

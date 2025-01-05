@@ -31,7 +31,7 @@ impl LibraryAnalyser for RustAnalyser {
         LANGUAGE.into()
     }
 
-    fn get_extensions(&self) -> Vec<String> {
+    fn get_file_extensions(&self) -> Vec<String> {
         vec!["rs".to_string()]
     }
 
