@@ -1,5 +1,5 @@
 use crate::error::LaibraryError;
-use crate::types::{Module, SourceFile, Symbol};
+use crate::types::{Namespace, SourceFile, Symbol};
 use std::path::Path;
 use tree_sitter::Node;
 
@@ -7,7 +7,7 @@ fn extract_modules_from_module<'a>(
     module_node: Node<'a>,
     source_code: &str,
     module_path: String,
-) -> Result<Vec<Module<'a>>, LaibraryError> {
+) -> Result<Vec<Namespace<'a>>, LaibraryError> {
     let mut modules = Vec::new();
     let mut symbols = Vec::new();
     let mut cursor = module_node.walk();
@@ -68,7 +68,7 @@ fn extract_modules_from_module<'a>(
         }
     }
 
-    modules.push(Module {
+    modules.push(Namespace {
         name: module_path,
         symbols,
     });
@@ -76,7 +76,7 @@ fn extract_modules_from_module<'a>(
     Ok(modules)
 }
 
-pub fn extract_modules(sources: &[SourceFile]) -> Result<Vec<Module<'_>>, LaibraryError> {
+pub fn extract_modules(sources: &[SourceFile]) -> Result<Vec<Namespace<'_>>, LaibraryError> {
     let mut modules = Vec::new();
 
     for source in sources {

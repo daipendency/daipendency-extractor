@@ -1,19 +1,19 @@
 use crate::analysers::Analyser;
 use crate::error::LaibraryError;
-use crate::types::{Module, PackageMetadata};
+use crate::types::{Namespace, PackageMetadata};
 
 pub fn format_library_context(
     metadata: &PackageMetadata,
-    modules: &[Module],
+    namespaces: &[Namespace],
     analyser: &dyn Analyser,
 ) -> Result<String, LaibraryError> {
     let mut api_content = String::new();
 
-    for module in modules {
+    for namespace in namespaces {
         api_content.push_str(&format!(
-            "        <module name=\"{}\">\n{}\n        </module>\n",
-            module.name,
-            analyser.format_module(module)?
+            "        <namespace name=\"{}\">\n{}\n        </namespace>\n",
+            namespace.name,
+            analyser.format_namespace(namespace)?
         ));
     }
 
@@ -59,23 +59,23 @@ mod tests {
         fn extract_public_api<'a>(
             &self,
             _sources: &'a [crate::types::SourceFile],
-        ) -> Result<Vec<Module<'a>>, LaibraryError> {
+        ) -> Result<Vec<Namespace<'a>>, LaibraryError> {
             unimplemented!()
         }
 
-        fn format_module(&self, module: &Module) -> Result<String, LaibraryError> {
-            let mut module_doc = String::new();
-            for symbol in &module.symbols {
-                if !module_doc.is_empty() {
-                    module_doc.push_str("\n");
+        fn format_namespace(&self, namespace: &Namespace) -> Result<String, LaibraryError> {
+            let mut namespace_doc = String::new();
+            for symbol in &namespace.symbols {
+                if !namespace_doc.is_empty() {
+                    namespace_doc.push_str("\n");
                 }
-                module_doc.push_str(&symbol.source_code);
+                namespace_doc.push_str(&symbol.source_code);
             }
-            Ok(module_doc)
+            Ok(namespace_doc)
         }
     }
 
-    fn create_test_module<'tree>(name: &str, content: &str, tree: &'tree Tree) -> Module<'tree> {
+    fn create_test_namespace<'tree>(name: &str, content: &str, tree: &'tree Tree) -> Namespace<'tree> {
         let root_node = tree.root_node();
         let mut symbols = Vec::new();
         let mut cursor = root_node.walk();
@@ -100,7 +100,7 @@ mod tests {
             }
         }
 
-        Module {
+        Namespace {
             name: name.to_string(),
             symbols,
         }
@@ -123,15 +123,15 @@ mod tests {
 pub struct Test { field: String }
 pub enum TestEnum { A, B }"#;
         let tree = parser.parse(content, None).unwrap();
-        let test_module = create_test_module("test", content, &tree);
+        let test_namespace = create_test_namespace("test", content, &tree);
 
         let empty_content = "";
         let empty_tree = parser.parse(empty_content, None).unwrap();
-        let empty_module = create_test_module("empty", empty_content, &empty_tree);
+        let empty_namespace = create_test_namespace("empty", empty_content, &empty_tree);
 
-        let modules = vec![test_module, empty_module];
+        let namespaces = vec![test_namespace, empty_namespace];
         let analyser = TestAnalyser;
-        let documentation = format_library_context(&metadata, &modules, &analyser).unwrap();
+        let documentation = format_library_context(&metadata, &namespaces, &analyser).unwrap();
 
         assert!(
             documentation.contains(r#"<library name="test-lib" version="0.1.0">"#),
@@ -146,8 +146,8 @@ pub enum TestEnum { A, B }"#;
             "Library documentation not found"
         );
         assert!(
-            documentation.contains(r#"<module name="test">"#),
-            "Module tag not found"
+            documentation.contains(r#"<namespace name="test">"#),
+            "namespace tag not found"
         );
         assert!(
             documentation.contains("pub fn test() -> () {}"),
@@ -162,8 +162,8 @@ pub enum TestEnum { A, B }"#;
             "Enum not found"
         );
         assert!(
-            documentation.contains("</module>"),
-            "Module closing tag not found"
+            documentation.contains("</namespace>"),
+            "namespace closing tag not found"
         );
         assert!(
             documentation.contains("</library>"),
@@ -195,8 +195,8 @@ pub enum TestEnum { A, B }"#;
             "Library documentation not found"
         );
         assert!(
-            !documentation.contains("<module"),
-            "Unexpected module tag found"
+            !documentation.contains("<namespace"),
+            "Unexpected namespace tag found"
         );
     }
 }

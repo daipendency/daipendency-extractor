@@ -1,5 +1,3 @@
-//! Main library module for generating library API documentation.
-
 mod analysers;
 pub mod error;
 mod formatting;
@@ -34,9 +32,9 @@ pub fn generate_documentation(language: &str, path: &Path) -> Result<String, Lai
         analyser.get_file_extensions(),
     )?;
     let sources = parse_source_files(&file_paths, &analyser.get_parser_language())?;
-    let modules = analyser.extract_public_api(&sources)?;
+    let namespaces = analyser.extract_public_api(&sources)?;
 
-    format_library_context(&metadata, &modules, analyser.as_ref())
+    format_library_context(&metadata, &namespaces, analyser.as_ref())
 }
 
 #[cfg(test)]

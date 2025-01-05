@@ -3,7 +3,7 @@ use super::formatting;
 use super::metadata;
 use crate::analysers::Analyser;
 use crate::error::LaibraryError;
-use crate::types::{Module, PackageMetadata, SourceFile};
+use crate::types::{Namespace, PackageMetadata, SourceFile};
 use std::path::Path;
 use tree_sitter::Language;
 
@@ -37,11 +37,11 @@ impl Analyser for RustAnalyser {
     fn extract_public_api<'a>(
         &self,
         sources: &'a [SourceFile],
-    ) -> Result<Vec<Module<'a>>, LaibraryError> {
+    ) -> Result<Vec<Namespace<'a>>, LaibraryError> {
         extraction::extract_modules(sources)
     }
 
-    fn format_module(&self, module: &Module) -> Result<String, LaibraryError> {
+    fn format_namespace(&self, module: &Namespace) -> Result<String, LaibraryError> {
         formatting::format_module(module)
     }
 }

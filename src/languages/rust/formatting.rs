@@ -1,7 +1,7 @@
 use crate::error::LaibraryError;
-use crate::types::Module;
+use crate::types::Namespace;
 
-pub fn format_module(module: &Module) -> Result<String, LaibraryError> {
+pub fn format_module(module: &Namespace) -> Result<String, LaibraryError> {
     let mut module_doc = String::new();
     for symbol in &module.symbols {
         if !module_doc.is_empty() {
@@ -18,7 +18,7 @@ mod tests {
     use crate::types::Symbol;
     use tree_sitter::{Parser, Tree};
 
-    fn create_test_module<'tree>(name: &str, content: &str, tree: &'tree Tree) -> Module<'tree> {
+    fn create_test_module<'tree>(name: &str, content: &str, tree: &'tree Tree) -> Namespace<'tree> {
         let root_node = tree.root_node();
         let mut symbols = Vec::new();
         let mut cursor = root_node.walk();
@@ -43,7 +43,7 @@ mod tests {
             }
         }
 
-        Module {
+        Namespace {
             name: name.to_string(),
             symbols,
         }

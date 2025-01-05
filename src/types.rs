@@ -15,7 +15,7 @@ pub struct SourceFile {
 }
 
 #[derive(Debug)]
-pub struct Module<'a> {
+pub struct Namespace<'a> {
     pub name: String,
     pub symbols: Vec<Symbol<'a>>,
 }
