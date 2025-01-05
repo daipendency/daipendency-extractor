@@ -1,4 +1,32 @@
-- All the branches of each unit under test should be covered, preferably with a unit test for each branch. When changing the unit test, make sure to add or update tests accordingly.
+# General requirements
+
+- At the start of each task, read the README.md files from the project and the relevant directories to gather enough context to complete the task.
+- Do NOT ever write unsafe Rust code.
+- Use British grammar and spelling.
+
+# Dependencies
+
+- At the start of each task, familiarise yourself with the `Cargo.toml` file and the dependencies it already has.
+- Avoid introducing external dependencies for functionality that can be easily implemented with the standard library.
+- If you think an external dependency is necessary, get approval from the user first.
+- Use `cargo add` to add dependencies instead of editing the `Cargo.toml` file directly, so we can get the latest version.
+
+# Testing
+
+- All the branches of each unit under test should be covered, preferably with a unit test for each branch. In other words, each unit test should cover exactly one scenario.
+- When changing the unit under test, make sure to add, update and/or remove tests accordingly.
 - Run the tests after making changes to the codebase.
 - Run the tests with `RUST_BACKTRACE=full`.
-- Use British grammar and spelling.
+- Prefer specialised assertions (e.g. equality checks) over simple boolean assertions.
+- Add a helpful yet succinct message to each assertion so that we don't have to add temporary debug statements when the assertion fails.
+- When a test fails, think critically about the cause of the failure, and consider the requirements. The issue may be the test or the unit under test.
+
+# Troubleshooting
+
+- When something goes wrong (e.g. tests fail, the code doesn't compile), fix the first issue and then try again. Do not try to fix multiple issues at once.
+- When an assertion causes a test to fail, try to add or improve the assertion message, instead of adding a temporary debug statement.
+
+# Commit messages
+
+- The title should be under 80 characters, succinctly summarise the changes and use the imperative mood (e.g. "Add tests for..." instead of "Adding tests for...").
+- The body should be a detailed description of the changes, including the rationale for the changes and any other relevant information.
