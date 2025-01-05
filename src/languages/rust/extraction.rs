@@ -103,9 +103,7 @@ fn extract_public_items(
                     }
 
                     // Always add the module to the map, even if it's empty
-                    if !modules.contains_key(&new_module_path) {
-                        modules.insert(new_module_path, Vec::new());
-                    }
+                    modules.entry(new_module_path).or_insert_with(Vec::new);
                 }
             }
             "use_declaration" => {
@@ -455,7 +453,7 @@ fn extract_type(node: &Node, source_code: &str) -> Result<String, LaibraryError>
                             found_dyn = true;
                         }
                         type_str.push_str(text);
-                        type_str.push_str(" ");
+                        type_str.push(' ');
                     }
                 }
                 if !found_dyn {
@@ -556,7 +554,7 @@ fn extract_generic_type(node: &Node, source_code: &str) -> Result<String, Laibra
                                     found_dyn = true;
                                 }
                                 type_str.push_str(text);
-                                type_str.push_str(" ");
+                                type_str.push(' ');
                             }
                         }
                         if !found_dyn {

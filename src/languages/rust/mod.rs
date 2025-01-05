@@ -39,6 +39,12 @@ impl ApiRepresentation for RustApi {
 
 pub struct RustAnalyser;
 
+impl Default for RustAnalyser {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl RustAnalyser {
     pub fn new() -> Self {
         RustAnalyser
