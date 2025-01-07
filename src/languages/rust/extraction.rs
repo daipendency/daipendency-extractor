@@ -20,13 +20,16 @@ fn extract_modules_from_module<'a>(
         match child.kind() {
             "function_item" | "struct_item" | "enum_item" | "trait_item" | "macro_definition" => {
                 if let Some(name) = extract_name(&child, source_code) {
+                    let mut source_code_with_docs = extract_outer_doc_comments(&child, source_code)?;
+                    source_code_with_docs.push_str(
+                        child.utf8_text(source_code.as_bytes())
+                            .map_err(|e| LaibraryError::Parse(e.to_string()))?
+                    );
+
                     symbols.push(Symbol {
                         name,
                         node: child,
-                        source_code: child
-                            .utf8_text(source_code.as_bytes())
-                            .map_err(|e| LaibraryError::Parse(e.to_string()))?
-                            .to_string(),
+                        source_code: source_code_with_docs,
                     });
                 }
             }
@@ -133,6 +136,28 @@ fn determine_module_path(file_path: &Path) -> Result<Option<String>, LaibraryErr
     }
 }
 
+fn extract_outer_doc_comments(node: &Node, source_code: &str) -> Result<String, LaibraryError> {
+    let mut doc_comments = Vec::new();
+    let mut current = node.prev_sibling();
+    
+    while let Some(sibling) = current {
+        if sibling.kind() == "line_comment" {
+            let comment_text = sibling.utf8_text(source_code.as_bytes())
+                .map_err(|e| LaibraryError::Parse(e.to_string()))?;
+            if comment_text.starts_with("///") {
+                doc_comments.push(comment_text);
+            }
+        }
+        current = sibling.prev_sibling();
+    }
+
+    let mut result = String::new();
+    for comment in doc_comments.iter().rev() {
+        result.push_str(comment);
+    }
+    Ok(result)
+}
+
 fn is_public(node: &Node, source_code: &str) -> bool {
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
@@ -213,6 +238,216 @@ mod tests {
             assert_eq!(
                 determine_module_path(&PathBuf::from("src/text/formatter.rs")).unwrap(),
                 Some("text::formatter".to_string())
+            );
+        }
+    }
+
+    mod functions {
+        use super::*;
+
+        #[test]
+        fn function_without_doc_comment() {
+            let source = create_source_file(
+                "src/lib.rs",
+                r#"
+pub fn test_function() -> i32 {
+    42
+}
+"#,
+            );
+
+            let sources = vec![source];
+            let modules = extract_modules(&sources).unwrap();
+            
+            let root_module = modules.iter().find(|m| m.name.is_empty()).unwrap();
+            assert_eq!(root_module.symbols.len(), 1);
+            assert_eq!(root_module.symbols[0].name, "test_function");
+            assert_eq!(
+                root_module.symbols[0].source_code.trim(),
+                "pub fn test_function() -> i32 {\n    42\n}"
+            );
+        }
+
+        #[test]
+        fn function_with_doc_comment() {
+            let source = create_source_file(
+                "src/lib.rs",
+                r#"
+/// This is a documented function
+/// that returns the meaning of life
+pub fn test_function() -> i32 {
+    42
+}
+"#,
+            );
+
+            let sources = vec![source];
+            let modules = extract_modules(&sources).unwrap();
+            
+            let root_module = modules.iter().find(|m| m.name.is_empty()).unwrap();
+            assert_eq!(root_module.symbols.len(), 1);
+            assert_eq!(root_module.symbols[0].name, "test_function");
+            assert_eq!(
+                root_module.symbols[0].source_code.trim(),
+                "/// This is a documented function\n/// that returns the meaning of life\npub fn test_function() -> i32 {\n    42\n}"
+            );
+        }
+    }
+
+    mod structs {
+        use super::*;
+
+        #[test]
+        fn struct_without_doc_comment() {
+            let source = create_source_file(
+                "src/lib.rs",
+                r#"
+pub struct TestStruct {
+    field: i32
+}
+"#,
+            );
+
+            let sources = vec![source];
+            let modules = extract_modules(&sources).unwrap();
+            
+            let root_module = modules.iter().find(|m| m.name.is_empty()).unwrap();
+            assert_eq!(root_module.symbols.len(), 1);
+            assert_eq!(root_module.symbols[0].name, "TestStruct");
+            assert_eq!(
+                root_module.symbols[0].source_code.trim(),
+                "pub struct TestStruct {\n    field: i32\n}"
+            );
+        }
+
+        #[test]
+        fn struct_with_doc_comment() {
+            let source = create_source_file(
+                "src/lib.rs",
+                r#"
+/// A test struct
+/// with documentation
+pub struct TestStruct {
+    field: i32
+}
+"#,
+            );
+
+            let sources = vec![source];
+            let modules = extract_modules(&sources).unwrap();
+            
+            let root_module = modules.iter().find(|m| m.name.is_empty()).unwrap();
+            assert_eq!(root_module.symbols.len(), 1);
+            assert_eq!(root_module.symbols[0].name, "TestStruct");
+            assert_eq!(
+                root_module.symbols[0].source_code.trim(),
+                "/// A test struct\n/// with documentation\npub struct TestStruct {\n    field: i32\n}"
+            );
+        }
+    }
+
+    mod enums {
+        use super::*;
+
+        #[test]
+        fn enum_without_doc_comment() {
+            let source = create_source_file(
+                "src/lib.rs",
+                r#"
+pub enum TestEnum {
+    A,
+    B
+}
+"#,
+            );
+
+            let sources = vec![source];
+            let modules = extract_modules(&sources).unwrap();
+            
+            let root_module = modules.iter().find(|m| m.name.is_empty()).unwrap();
+            assert_eq!(root_module.symbols.len(), 1);
+            assert_eq!(root_module.symbols[0].name, "TestEnum");
+            assert_eq!(
+                root_module.symbols[0].source_code.trim(),
+                "pub enum TestEnum {\n    A,\n    B\n}"
+            );
+        }
+
+        #[test]
+        fn enum_with_doc_comment() {
+            let source = create_source_file(
+                "src/lib.rs",
+                r#"
+/// A test enum
+/// with variants
+pub enum TestEnum {
+    A,
+    B
+}
+"#,
+            );
+
+            let sources = vec![source];
+            let modules = extract_modules(&sources).unwrap();
+            
+            let root_module = modules.iter().find(|m| m.name.is_empty()).unwrap();
+            assert_eq!(root_module.symbols.len(), 1);
+            assert_eq!(root_module.symbols[0].name, "TestEnum");
+            assert_eq!(
+                root_module.symbols[0].source_code.trim(),
+                "/// A test enum\n/// with variants\npub enum TestEnum {\n    A,\n    B\n}"
+            );
+        }
+    }
+
+    mod traits {
+        use super::*;
+
+        #[test]
+        fn trait_without_doc_comment() {
+            let source = create_source_file(
+                "src/lib.rs",
+                r#"
+pub trait TestTrait {
+    fn test_method(&self);
+}
+"#,
+            );
+
+            let sources = vec![source];
+            let modules = extract_modules(&sources).unwrap();
+            
+            let root_module = modules.iter().find(|m| m.name.is_empty()).unwrap();
+            assert_eq!(root_module.symbols.len(), 1);
+            assert_eq!(root_module.symbols[0].name, "TestTrait");
+            assert_eq!(
+                root_module.symbols[0].source_code.trim(),
+                "pub trait TestTrait {\n    fn test_method(&self);\n}"
+            );
+        }
+
+        #[test]
+        fn trait_with_doc_comment() {
+            let source = create_source_file(
+                "src/lib.rs",
+                r#"
+/// A test trait
+/// with a method
+pub trait TestTrait {
+    fn test_method(&self);
+}
+"#,
+            );
+
+            let sources = vec![source];
+            let modules = extract_modules(&sources).unwrap();
+            
+            let root_module = modules.iter().find(|m| m.name.is_empty()).unwrap();
+            assert_eq!(root_module.symbols.len(), 1);
+            assert_eq!(root_module.symbols[0].name, "TestTrait");
+            assert_eq!(
+                root_module.symbols[0].source_code.trim(),
+                "/// A test trait\n/// with a method\npub trait TestTrait {\n    fn test_method(&self);\n}"
             );
         }
     }
