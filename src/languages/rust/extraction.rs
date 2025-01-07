@@ -20,10 +20,12 @@ fn extract_modules_from_module<'a>(
         match child.kind() {
             "function_item" | "struct_item" | "enum_item" | "trait_item" | "macro_definition" => {
                 if let Some(name) = extract_name(&child, source_code) {
-                    let mut source_code_with_docs = extract_outer_doc_comments(&child, source_code)?;
+                    let mut source_code_with_docs =
+                        extract_outer_doc_comments(&child, source_code)?;
                     source_code_with_docs.push_str(
-                        child.utf8_text(source_code.as_bytes())
-                            .map_err(|e| LaibraryError::Parse(e.to_string()))?
+                        child
+                            .utf8_text(source_code.as_bytes())
+                            .map_err(|e| LaibraryError::Parse(e.to_string()))?,
                     );
 
                     symbols.push(Symbol {
@@ -137,38 +139,92 @@ fn determine_module_path(file_path: &Path) -> Result<Option<String>, LaibraryErr
 }
 
 fn extract_outer_doc_comments(node: &Node, source_code: &str) -> Result<String, LaibraryError> {
-    let mut doc_comments = Vec::new();
-    let mut current = node.prev_sibling();
-    
-    while let Some(sibling) = current {
-        if sibling.kind() == "line_comment" || sibling.kind() == "block_comment" {
-            let mut cursor = sibling.walk();
-            let children: Vec<_> = sibling.children(&mut cursor).collect();
-            
-            if !children.iter().any(|c| c.kind() == "outer_doc_comment_marker") {
-                current = sibling.prev_sibling();
-                continue;
-            }
+    // First check the immediate previous sibling
+    if let Some(sibling) = node.prev_sibling() {
+        let mut cursor = sibling.walk();
+        let children: Vec<_> = sibling.children(&mut cursor).collect();
 
-            if let Some(doc_node) = children.iter().find(|child| child.kind() == "doc_comment") {
-                if sibling.kind() == "line_comment" {
-                    doc_comments.push(format!("///{}", doc_node.utf8_text(source_code.as_bytes())
-                        .map_err(|e| LaibraryError::Parse(e.to_string()))?));
-                } else {
-                    doc_comments.push(sibling.utf8_text(source_code.as_bytes())
-                        .map_err(|e| LaibraryError::Parse(e.to_string()))?
-                        .to_string());
+        // Check if this is an outer doc comment
+        let has_outer_doc = children
+            .iter()
+            .any(|c| c.kind() == "outer_doc_comment_marker");
+
+        // If it's not an outer doc comment, return empty string
+        if !has_outer_doc {
+            return Ok(String::new());
+        }
+
+        match sibling.kind() {
+            "block_comment" => {
+                if let Some(_) = children.iter().find(|child| child.kind() == "doc_comment") {
+                    let text = sibling
+                        .utf8_text(source_code.as_bytes())
+                        .map_err(|e| LaibraryError::Parse(e.to_string()))?;
+                    return Ok(format!("{}\n", text));
                 }
+                return Ok(String::new());
+            }
+            "line_comment" => {
+                let mut current = Some(sibling);
+                let mut doc_comments = Vec::new();
+
+                // Collect all consecutive line comments with outer doc markers
+                while let Some(comment) = current {
+                    if comment.kind() != "line_comment" {
+                        break;
+                    }
+
+                    let mut cursor = comment.walk();
+                    let children: Vec<_> = comment.children(&mut cursor).collect();
+
+                    // Check if this is an outer doc comment
+                    let has_outer_doc = children
+                        .iter()
+                        .any(|c| c.kind() == "outer_doc_comment_marker");
+
+                    if has_outer_doc {
+                        if let Some(doc_node) =
+                            children.iter().find(|child| child.kind() == "doc_comment")
+                        {
+                            let comment_text = format!(
+                                "///{}",
+                                doc_node
+                                    .utf8_text(source_code.as_bytes())
+                                    .map_err(|e| LaibraryError::Parse(e.to_string()))?
+                            );
+                            doc_comments.push(comment_text);
+                        }
+                    }
+
+                    current = comment.prev_sibling();
+                    if let Some(next) = current {
+                        // If the next sibling is not a line comment, stop here
+                        if next.kind() != "line_comment" {
+                            break;
+                        }
+                    }
+                }
+
+                if doc_comments.is_empty() {
+                    return Ok(String::new());
+                }
+
+                // Join the comments in reverse order (each comment already ends with a newline character)
+                let result = doc_comments
+                    .iter()
+                    .rev()
+                    .map(|s| s.as_str())
+                    .collect::<Vec<_>>()
+                    .join("");
+                return Ok(result);
+            }
+            _ => {
+                return Ok(String::new());
             }
         }
-        current = sibling.prev_sibling();
     }
 
-    let mut result = String::new();
-    for comment in doc_comments.iter().rev() {
-        result.push_str(comment);
-    }
-    Ok(result)
+    Ok(String::new())
 }
 
 fn is_public(node: &Node, source_code: &str) -> bool {
@@ -222,12 +278,29 @@ mod tests {
     mod doc_comments {
         use super::*;
 
-        fn get_first_item_node(source: &SourceFile) -> Node {
+        fn get_first_item_node<'a>(source: &'a SourceFile, name: &str) -> Node<'a> {
             let root = source.tree.root_node();
             let mut cursor = root.walk();
-            let node = root.children(&mut cursor)
-                .find(|node| matches!(node.kind(), "function_item" | "struct_item" | "enum_item" | "trait_item"))
-                .expect("No item found in source");
+            let node = root
+                .children(&mut cursor)
+                .find(|node| {
+                    if !matches!(
+                        node.kind(),
+                        "function_item" | "struct_item" | "enum_item" | "trait_item"
+                    ) {
+                        return false;
+                    }
+                    let mut cursor = node.walk();
+                    for child in node.children(&mut cursor) {
+                        if matches!(child.kind(), "identifier" | "type_identifier") {
+                            if let Ok(text) = child.utf8_text(source.content.as_bytes()) {
+                                return text == name;
+                            }
+                        }
+                    }
+                    false
+                })
+                .unwrap_or_else(|| panic!("No item found with name {}", name));
             node
         }
 
@@ -241,9 +314,12 @@ struct Test {}
 "#,
             );
 
-            let item = get_first_item_node(&source);
+            let item = get_first_item_node(&source, "Test");
             let doc = extract_outer_doc_comments(&item, &source.content).unwrap();
-            assert_eq!(doc, "/// A documented item\n", "Single line outer doc comment not extracted correctly");
+            assert_eq!(
+                doc, "/// A documented item\n",
+                "Single line outer doc comment not extracted correctly"
+            );
         }
 
         #[test]
@@ -258,11 +334,10 @@ struct Test {}
 "#,
             );
 
-            let item = get_first_item_node(&source);
+            let item = get_first_item_node(&source, "Test");
             let doc = extract_outer_doc_comments(&item, &source.content).unwrap();
             assert_eq!(
-                doc,
-                "/// First line\n/// Second line\n/// Third line\n",
+                doc, "/// First line\n/// Second line\n/// Third line\n",
                 "Multiple line outer doc comments not extracted correctly"
             );
         }
@@ -278,12 +353,11 @@ struct Test {}
 "#,
             );
 
-            let item = get_first_item_node(&source);
+            let item = get_first_item_node(&source, "Test");
             let doc = extract_outer_doc_comments(&item, &source.content).unwrap();
             assert_eq!(
-                doc,
-                "/// Outer doc\n",
-                "Inner doc comment was incorrectly included"
+                doc, "",
+                "Should return empty string when doc comment is separated by inner doc comment"
             );
         }
 
@@ -298,12 +372,11 @@ struct Test {}
 "#,
             );
 
-            let item = get_first_item_node(&source);
+            let item = get_first_item_node(&source, "Test");
             let doc = extract_outer_doc_comments(&item, &source.content).unwrap();
             assert_eq!(
-                doc,
-                "/// Doc comment\n",
-                "Regular comment was incorrectly included"
+                doc, "",
+                "Should return empty string when doc comment is separated by regular comment"
             );
         }
 
@@ -316,11 +389,10 @@ struct Test {}
 "#,
             );
 
-            let item = get_first_item_node(&source);
+            let item = get_first_item_node(&source, "Test");
             let doc = extract_outer_doc_comments(&item, &source.content).unwrap();
             assert_eq!(
-                doc,
-                "",
+                doc, "",
                 "Empty string expected when no doc comments present"
             );
         }
@@ -338,12 +410,96 @@ struct Test {}
 "#,
             );
 
-            let item = get_first_item_node(&source);
+            let item = get_first_item_node(&source, "Test");
             let doc = extract_outer_doc_comments(&item, &source.content).unwrap();
             assert_eq!(
                 doc,
-                "/** A block doc comment\n * with multiple lines\n * and some indentation\n */",
+                "/** A block doc comment\n * with multiple lines\n * and some indentation\n */\n",
                 "Block doc comment not extracted correctly"
+            );
+        }
+
+        #[test]
+        fn ignores_file_level_doc_comments() {
+            let source = create_source_file(
+                "test.rs",
+                r#"
+//! File-level documentation
+//! More file-level docs
+
+/// This is the struct's doc
+pub struct Test {}
+"#,
+            );
+
+            let item = get_first_item_node(&source, "Test");
+            let doc = extract_outer_doc_comments(&item, &source.content).unwrap();
+            assert_eq!(
+                doc, "/// This is the struct's doc\n",
+                "File-level doc comments were incorrectly included"
+            );
+        }
+
+        #[test]
+        fn second_symbol_only_gets_own_doc_comments() {
+            let source = create_source_file(
+                "test.rs",
+                r#"
+/// First struct's doc
+pub struct FirstStruct {}
+
+/// Second struct's doc
+pub struct SecondStruct {}
+"#,
+            );
+
+            let item = get_first_item_node(&source, "SecondStruct");
+            let doc = extract_outer_doc_comments(&item, &source.content).unwrap();
+            assert_eq!(
+                doc, "/// Second struct's doc\n",
+                "First struct's doc comments were incorrectly included"
+            );
+        }
+
+        #[test]
+        fn stops_at_non_doc_comment() {
+            let source = create_source_file(
+                "test.rs",
+                r#"
+//! Some file docs
+pub struct FirstStruct {}
+
+/// This is the doc we want
+pub struct Test {}
+"#,
+            );
+
+            let item = get_first_item_node(&source, "Test");
+            let doc = extract_outer_doc_comments(&item, &source.content).unwrap();
+            assert_eq!(
+                doc, "/// This is the doc we want\n",
+                "Did not stop at non-doc comment node"
+            );
+        }
+
+        #[test]
+        fn block_comment_stops_at_itself() {
+            let source = create_source_file(
+                "test.rs",
+                r#"
+/// This line should be ignored
+/** This block comment
+ * should be returned
+ */
+struct Test {}
+"#,
+            );
+
+            let item = get_first_item_node(&source, "Test");
+            let doc = extract_outer_doc_comments(&item, &source.content).unwrap();
+            assert_eq!(
+                doc, "/** This block comment\n * should be returned\n */\n",
+                "Block comment should not include previous line comments"
             );
         }
     }
@@ -400,7 +556,7 @@ pub fn test_function() -> i32 {
 
             let sources = vec![source];
             let modules = extract_modules(&sources).unwrap();
-            
+
             let root_module = modules.iter().find(|m| m.name.is_empty()).unwrap();
             assert_eq!(root_module.symbols.len(), 1);
             assert_eq!(root_module.symbols[0].name, "test_function");
@@ -425,7 +581,7 @@ pub fn test_function() -> i32 {
 
             let sources = vec![source];
             let modules = extract_modules(&sources).unwrap();
-            
+
             let root_module = modules.iter().find(|m| m.name.is_empty()).unwrap();
             assert_eq!(root_module.symbols.len(), 1);
             assert_eq!(root_module.symbols[0].name, "test_function");
@@ -452,7 +608,7 @@ pub struct TestStruct {
 
             let sources = vec![source];
             let modules = extract_modules(&sources).unwrap();
-            
+
             let root_module = modules.iter().find(|m| m.name.is_empty()).unwrap();
             assert_eq!(root_module.symbols.len(), 1);
             assert_eq!(root_module.symbols[0].name, "TestStruct");
@@ -477,7 +633,7 @@ pub struct TestStruct {
 
             let sources = vec![source];
             let modules = extract_modules(&sources).unwrap();
-            
+
             let root_module = modules.iter().find(|m| m.name.is_empty()).unwrap();
             assert_eq!(root_module.symbols.len(), 1);
             assert_eq!(root_module.symbols[0].name, "TestStruct");
@@ -505,7 +661,7 @@ pub enum TestEnum {
 
             let sources = vec![source];
             let modules = extract_modules(&sources).unwrap();
-            
+
             let root_module = modules.iter().find(|m| m.name.is_empty()).unwrap();
             assert_eq!(root_module.symbols.len(), 1);
             assert_eq!(root_module.symbols[0].name, "TestEnum");
@@ -531,7 +687,7 @@ pub enum TestEnum {
 
             let sources = vec![source];
             let modules = extract_modules(&sources).unwrap();
-            
+
             let root_module = modules.iter().find(|m| m.name.is_empty()).unwrap();
             assert_eq!(root_module.symbols.len(), 1);
             assert_eq!(root_module.symbols[0].name, "TestEnum");
@@ -558,7 +714,7 @@ pub trait TestTrait {
 
             let sources = vec![source];
             let modules = extract_modules(&sources).unwrap();
-            
+
             let root_module = modules.iter().find(|m| m.name.is_empty()).unwrap();
             assert_eq!(root_module.symbols.len(), 1);
             assert_eq!(root_module.symbols[0].name, "TestTrait");
@@ -583,7 +739,7 @@ pub trait TestTrait {
 
             let sources = vec![source];
             let modules = extract_modules(&sources).unwrap();
-            
+
             let root_module = modules.iter().find(|m| m.name.is_empty()).unwrap();
             assert_eq!(root_module.symbols.len(), 1);
             assert_eq!(root_module.symbols[0].name, "TestTrait");
