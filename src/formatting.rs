@@ -75,7 +75,11 @@ mod tests {
         }
     }
 
-    fn create_test_namespace<'tree>(name: &str, content: &str, tree: &'tree Tree) -> Namespace<'tree> {
+    fn create_test_namespace<'tree>(
+        name: &str,
+        content: &str,
+        tree: &'tree Tree,
+    ) -> Namespace<'tree> {
         let root_node = tree.root_node();
         let mut symbols = Vec::new();
         let mut cursor = root_node.walk();

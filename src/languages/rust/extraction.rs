@@ -3,6 +3,22 @@ use crate::types::{Namespace, SourceFile, Symbol};
 use std::path::Path;
 use tree_sitter::Node;
 
+pub fn extract_modules(sources: &[SourceFile]) -> Result<Vec<Namespace<'_>>, LaibraryError> {
+    let mut modules = Vec::new();
+
+    for source in sources {
+        let root_node = source.tree.root_node();
+        let module_path = determine_module_path(&source.path)?;
+        let module_path = module_path.unwrap_or_default();
+
+        let mut source_modules =
+            extract_modules_from_module(root_node, &source.content, module_path)?;
+        modules.append(&mut source_modules);
+    }
+
+    Ok(modules)
+}
+
 fn extract_modules_from_module<'a>(
     module_node: Node<'a>,
     source_code: &str,
@@ -77,22 +93,6 @@ fn extract_modules_from_module<'a>(
         name: module_path,
         symbols,
     });
-
-    Ok(modules)
-}
-
-pub fn extract_modules(sources: &[SourceFile]) -> Result<Vec<Namespace<'_>>, LaibraryError> {
-    let mut modules = Vec::new();
-
-    for source in sources {
-        let root_node = source.tree.root_node();
-        let module_path = determine_module_path(&source.path)?;
-        let module_path = module_path.unwrap_or_default();
-
-        let mut source_modules =
-            extract_modules_from_module(root_node, &source.content, module_path)?;
-        modules.append(&mut source_modules);
-    }
 
     Ok(modules)
 }
