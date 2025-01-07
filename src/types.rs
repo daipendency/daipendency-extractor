@@ -20,7 +20,7 @@ pub struct Namespace {
     pub symbols: Vec<Symbol>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Symbol {
     pub name: String,
     pub source_code: String,

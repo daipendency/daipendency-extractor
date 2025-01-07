@@ -254,46 +254,60 @@ mod tests {
     use super::*;
     use crate::analysers::Analyser;
     use crate::languages::rust::analyser::RustAnalyser;
+    use crate::types::Symbol;
     use std::path::PathBuf;
     use tree_sitter::Parser;
 
-    fn create_source_file(path: &str, content: &str) -> SourceFile {
-        let mut parser = Parser::new();
-        let analyser = RustAnalyser::new();
-        parser
-            .set_language(&analyser.get_parser_language())
-            .unwrap();
-        let tree = parser
-            .parse(content, None)
-            .expect("Failed to parse test source file");
-        SourceFile {
-            path: PathBuf::from(path),
-            content: content.to_string(),
-            tree,
-        }
-    }
-
-    fn get_namespace<'a>(modules: &'a [Namespace], name: &str) -> Option<&'a Namespace> {
-        modules.iter().find(|m| m.name == name)
-    }
-
-    mod doc_comments {
+    mod helpers {
         use super::*;
 
-        #[test]
-        fn single_line_outer_doc_comment() {
-            let source = create_source_file(
-                "src/lib.rs",
-                r#"
-/// A documented item
-pub struct Test {}
-"#,
-            );
+        pub fn create_source_file(path: &str, content: &str) -> SourceFile {
+            let mut parser = Parser::new();
+            let analyser = RustAnalyser::new();
+            parser
+                .set_language(&analyser.get_parser_language())
+                .unwrap();
+            let tree = parser
+                .parse(content, None)
+                .expect("Failed to parse test source file");
+            SourceFile {
+                path: PathBuf::from(path),
+                content: content.to_string(),
+                tree,
+            }
+        }
 
+        pub fn get_namespace<'a>(modules: &'a [Namespace], name: &str) -> Option<&'a Namespace> {
+            modules.iter().find(|m| m.name == name)
+        }
+
+        pub fn extract_symbol(source_code: &str, symbol_name: &str) -> Symbol {
+            let source = create_source_file("src/lib.rs", source_code);
             let sources = vec![source];
             let modules = extract_modules(&sources).unwrap();
             let root_module = get_namespace(&modules, "").unwrap();
-            let symbol = root_module.get_symbol("Test").unwrap();
+            root_module.get_symbol(symbol_name).unwrap().clone()
+        }
+
+        pub fn extract_modules_from_source(path: &str, content: &str) -> Vec<Namespace> {
+            let source = create_source_file(path, content);
+            let sources = vec![source];
+            extract_modules(&sources).unwrap()
+        }
+    }
+
+    mod doc_comments {
+        use super::helpers::*;
+
+        #[test]
+        fn single_line_outer_doc_comment() {
+            let source_code = r#"
+/// A documented item
+pub struct Test {}
+"#;
+
+            let symbol = extract_symbol(source_code, "Test");
+
             assert_eq!(
                 symbol.doc_comment.as_deref(),
                 Some("A documented item"),
@@ -303,20 +317,15 @@ pub struct Test {}
 
         #[test]
         fn multiple_line_outer_doc_comments() {
-            let source = create_source_file(
-                "src/lib.rs",
-                r#"
+            let source_code = r#"
 /// First line
 /// Second line
 /// Third line
 pub struct Test {}
-"#,
-            );
+"#;
 
-            let sources = vec![source];
-            let modules = extract_modules(&sources).unwrap();
-            let root_module = get_namespace(&modules, "").unwrap();
-            let symbol = root_module.get_symbol("Test").unwrap();
+            let symbol = extract_symbol(source_code, "Test");
+
             assert_eq!(
                 symbol.doc_comment.as_deref(),
                 Some("First line\nSecond line\nThird line"),
@@ -326,76 +335,62 @@ pub struct Test {}
 
         #[test]
         fn ignores_inner_doc_comments() {
-            let source = create_source_file(
-                "src/lib.rs",
-                r#"
+            let source_code = r#"
 /// Outer doc
 //! Inner doc
 pub struct Test {}
-"#,
-            );
+"#;
 
-            let sources = vec![source];
-            let modules = extract_modules(&sources).unwrap();
-            let root_module = get_namespace(&modules, "").unwrap();
-            let symbol = root_module.get_symbol("Test").unwrap();
-            assert_eq!(symbol.doc_comment, None, "Should ignore inner doc comments");
+            let symbol = extract_symbol(source_code, "Test");
+
+            assert_eq!(
+                symbol.doc_comment, None,
+                "Inner doc comments should be ignored"
+            );
         }
 
         #[test]
         fn ignores_regular_comments() {
-            let source = create_source_file(
-                "src/lib.rs",
-                r#"
+            let source_code = r#"
 /// Doc comment
 // Regular comment
 pub struct Test {}
-"#,
-            );
+"#;
 
-            let sources = vec![source];
-            let modules = extract_modules(&sources).unwrap();
-            let root_module = get_namespace(&modules, "").unwrap();
-            let symbol = root_module.get_symbol("Test").unwrap();
-            assert_eq!(symbol.doc_comment, None, "Should ignore regular comments");
+            let symbol = extract_symbol(source_code, "Test");
+
+            assert_eq!(
+                symbol.doc_comment, None,
+                "Regular comments should be ignored"
+            );
         }
 
         #[test]
         fn empty_when_no_doc_comments() {
-            let source = create_source_file(
-                "src/lib.rs",
-                r#"
+            let source_code = r#"
 pub struct Test {}
-"#,
-            );
+"#;
 
-            let sources = vec![source];
-            let modules = extract_modules(&sources).unwrap();
-            let root_module = get_namespace(&modules, "").unwrap();
-            let symbol = root_module.get_symbol("Test").unwrap();
+            let symbol = extract_symbol(source_code, "Test");
+
             assert_eq!(
                 symbol.doc_comment, None,
-                "None expected when no doc comments present"
+                "Expected None when no doc comments are present"
             );
         }
 
         #[test]
         fn block_doc_comments() {
-            let source = create_source_file(
-                "src/lib.rs",
-                r#"
+            let source_code = r#"
 /** A block doc comment
  * with multiple lines
  * and some indentation
  */
 pub struct Test {}
-"#,
-            );
+"#;
 
-            let sources = vec![source];
-            let modules = extract_modules(&sources).unwrap();
-            let root_module = get_namespace(&modules, "").unwrap();
-            let symbol = root_module.get_symbol("Test").unwrap();
+            let symbol = extract_symbol(source_code, "Test");
+
             assert_eq!(
                 symbol.doc_comment.as_deref(),
                 Some("A block doc comment\nwith multiple lines\nand some indentation"),
@@ -405,21 +400,16 @@ pub struct Test {}
 
         #[test]
         fn ignores_file_level_doc_comments() {
-            let source = create_source_file(
-                "src/lib.rs",
-                r#"
+            let source_code = r#"
 //! File-level documentation
 //! More file-level docs
 
 /// This is the struct's doc
 pub struct Test {}
-"#,
-            );
+"#;
 
-            let sources = vec![source];
-            let modules = extract_modules(&sources).unwrap();
-            let root_module = get_namespace(&modules, "").unwrap();
-            let symbol = root_module.get_symbol("Test").unwrap();
+            let symbol = extract_symbol(source_code, "Test");
+
             assert_eq!(
                 symbol.doc_comment.as_deref(),
                 Some("This is the struct's doc"),
@@ -429,21 +419,16 @@ pub struct Test {}
 
         #[test]
         fn second_symbol_only_gets_own_doc_comments() {
-            let source = create_source_file(
-                "src/lib.rs",
-                r#"
+            let source_code = r#"
 /// First struct's doc
 pub struct FirstStruct {}
 
 /// Second struct's doc
 pub struct SecondStruct {}
-"#,
-            );
+"#;
 
-            let sources = vec![source];
-            let modules = extract_modules(&sources).unwrap();
-            let root_module = get_namespace(&modules, "").unwrap();
-            let symbol = root_module.get_symbol("SecondStruct").unwrap();
+            let symbol = extract_symbol(source_code, "SecondStruct");
+
             assert_eq!(
                 symbol.doc_comment.as_deref(),
                 Some("Second struct's doc"),
@@ -453,21 +438,16 @@ pub struct SecondStruct {}
 
         #[test]
         fn stops_at_non_doc_comment() {
-            let source = create_source_file(
-                "src/lib.rs",
-                r#"
+            let source_code = r#"
 //! Some file docs
 pub struct FirstStruct {}
 
 /// This is the doc we want
 pub struct Test {}
-"#,
-            );
+"#;
 
-            let sources = vec![source];
-            let modules = extract_modules(&sources).unwrap();
-            let root_module = get_namespace(&modules, "").unwrap();
-            let symbol = root_module.get_symbol("Test").unwrap();
+            let symbol = extract_symbol(source_code, "Test");
+
             assert_eq!(
                 symbol.doc_comment.as_deref(),
                 Some("This is the doc we want"),
@@ -477,21 +457,16 @@ pub struct Test {}
 
         #[test]
         fn block_comment_stops_at_itself() {
-            let source = create_source_file(
-                "src/lib.rs",
-                r#"
+            let source_code = r#"
 /// This line should be ignored
 /** This block comment
  * should be returned
  */
 pub struct Test {}
-"#,
-            );
+"#;
 
-            let sources = vec![source];
-            let modules = extract_modules(&sources).unwrap();
-            let root_module = get_namespace(&modules, "").unwrap();
-            let symbol = root_module.get_symbol("Test").unwrap();
+            let symbol = extract_symbol(source_code, "Test");
+
             assert_eq!(
                 symbol.doc_comment.as_deref(),
                 Some("This block comment\nshould be returned"),
@@ -505,84 +480,77 @@ pub struct Test {}
 
         #[test]
         fn lib_rs_has_no_module_path() {
-            assert_eq!(
-                determine_module_path(&PathBuf::from("src/lib.rs")).unwrap(),
-                None
-            );
+            let file_path = PathBuf::from("src/lib.rs");
+
+            let module_path = determine_module_path(&file_path).unwrap();
+
+            assert_eq!(module_path, None);
         }
 
         #[test]
         fn direct_module_file_has_single_segment_path() {
-            assert_eq!(
-                determine_module_path(&PathBuf::from("src/text.rs")).unwrap(),
-                Some("text".to_string())
-            );
+            let file_path = PathBuf::from("src/text.rs");
+
+            let module_path = determine_module_path(&file_path).unwrap();
+
+            assert_eq!(module_path, Some("text".to_string()));
         }
 
         #[test]
         fn mod_rs_has_directory_name_path() {
-            assert_eq!(
-                determine_module_path(&PathBuf::from("src/text/mod.rs")).unwrap(),
-                Some("text".to_string())
-            );
+            let file_path = PathBuf::from("src/text/mod.rs");
+
+            let module_path = determine_module_path(&file_path).unwrap();
+
+            assert_eq!(module_path, Some("text".to_string()));
         }
 
         #[test]
         fn nested_module_has_multi_segment_path() {
-            assert_eq!(
-                determine_module_path(&PathBuf::from("src/text/formatter.rs")).unwrap(),
-                Some("text::formatter".to_string())
-            );
+            let file_path = PathBuf::from("src/text/formatter.rs");
+
+            let module_path = determine_module_path(&file_path).unwrap();
+
+            assert_eq!(module_path, Some("text::formatter".to_string()));
         }
     }
 
     mod functions {
-        use super::*;
+        use super::helpers::*;
 
         #[test]
         fn function_without_doc_comment() {
-            let source = create_source_file(
-                "src/lib.rs",
-                r#"
+            let source_code = r#"
 pub fn test_function() -> i32 {
     42
 }
-"#,
-            );
+"#;
 
-            let sources = vec![source];
-            let modules = extract_modules(&sources).unwrap();
+            let symbol = extract_symbol(source_code, "test_function");
 
-            let root_module = get_namespace(&modules, "").unwrap();
-            assert_eq!(root_module.symbols.len(), 1);
-            assert_eq!(root_module.symbols[0].name, "test_function");
+            assert_eq!(symbol.name, "test_function");
             assert_eq!(
-                root_module.symbols[0].source_code.trim(),
+                symbol.source_code.trim(),
                 "pub fn test_function() -> i32 {\n    42\n}"
             );
+            assert_eq!(symbol.doc_comment, None);
         }
 
         #[test]
         fn function_with_doc_comment() {
-            let source = create_source_file(
-                "src/lib.rs",
-                r#"
+            let source_code = r#"
 /// This is a documented function
 /// that returns the meaning of life
 pub fn test_function() -> i32 {
     42
 }
-"#,
-            );
+"#;
 
-            let sources = vec![source];
-            let modules = extract_modules(&sources).unwrap();
+            let symbol = extract_symbol(source_code, "test_function");
 
-            let root_module = get_namespace(&modules, "").unwrap();
-            assert_eq!(root_module.symbols.len(), 1);
-            assert_eq!(root_module.symbols[0].name, "test_function");
+            assert_eq!(symbol.name, "test_function");
             assert_eq!(
-                root_module.symbols[0].doc_comment.as_deref(),
+                symbol.doc_comment.as_deref(),
                 Some("This is a documented function\nthat returns the meaning of life"),
                 "Doc comment not extracted correctly"
             );
@@ -590,52 +558,41 @@ pub fn test_function() -> i32 {
     }
 
     mod structs {
-        use super::*;
+        use super::helpers::*;
 
         #[test]
         fn struct_without_doc_comment() {
-            let source = create_source_file(
-                "src/lib.rs",
-                r#"
+            let source_code = r#"
 pub struct TestStruct {
     field: i32
 }
-"#,
-            );
+"#;
 
-            let sources = vec![source];
-            let modules = extract_modules(&sources).unwrap();
+            let symbol = extract_symbol(source_code, "TestStruct");
 
-            let root_module = get_namespace(&modules, "").unwrap();
-            assert_eq!(root_module.symbols.len(), 1);
-            assert_eq!(root_module.symbols[0].name, "TestStruct");
+            assert_eq!(symbol.name, "TestStruct");
             assert_eq!(
-                root_module.symbols[0].source_code.trim(),
+                symbol.source_code.trim(),
                 "pub struct TestStruct {\n    field: i32\n}"
             );
+            assert_eq!(symbol.doc_comment, None);
         }
 
         #[test]
         fn struct_with_doc_comment() {
-            let source = create_source_file(
-                "src/lib.rs",
-                r#"
+            let source_code = r#"
 /// A test struct
 /// with documentation
 pub struct TestStruct {
     field: i32
 }
-"#,
-            );
+"#;
 
-            let sources = vec![source];
-            let modules = extract_modules(&sources).unwrap();
+            let symbol = extract_symbol(source_code, "TestStruct");
 
-            let root_module = get_namespace(&modules, "").unwrap();
-            assert_eq!(root_module.symbols.len(), 1);
-            assert_eq!(root_module.symbols[0].name, "TestStruct");
+            assert_eq!(symbol.name, "TestStruct");
             assert_eq!(
-                root_module.symbols[0].doc_comment.as_deref(),
+                symbol.doc_comment.as_deref(),
                 Some("A test struct\nwith documentation"),
                 "Doc comment not extracted correctly"
             );
@@ -643,54 +600,43 @@ pub struct TestStruct {
     }
 
     mod enums {
-        use super::*;
+        use super::helpers::*;
 
         #[test]
         fn enum_without_doc_comment() {
-            let source = create_source_file(
-                "src/lib.rs",
-                r#"
+            let source_code = r#"
 pub enum TestEnum {
     A,
     B
 }
-"#,
-            );
+"#;
 
-            let sources = vec![source];
-            let modules = extract_modules(&sources).unwrap();
+            let symbol = extract_symbol(source_code, "TestEnum");
 
-            let root_module = get_namespace(&modules, "").unwrap();
-            assert_eq!(root_module.symbols.len(), 1);
-            assert_eq!(root_module.symbols[0].name, "TestEnum");
+            assert_eq!(symbol.name, "TestEnum");
             assert_eq!(
-                root_module.symbols[0].source_code.trim(),
+                symbol.source_code.trim(),
                 "pub enum TestEnum {\n    A,\n    B\n}"
             );
+            assert_eq!(symbol.doc_comment, None);
         }
 
         #[test]
         fn enum_with_doc_comment() {
-            let source = create_source_file(
-                "src/lib.rs",
-                r#"
+            let source_code = r#"
 /// A test enum
 /// with variants
 pub enum TestEnum {
     A,
     B
 }
-"#,
-            );
+"#;
 
-            let sources = vec![source];
-            let modules = extract_modules(&sources).unwrap();
+            let symbol = extract_symbol(source_code, "TestEnum");
 
-            let root_module = get_namespace(&modules, "").unwrap();
-            assert_eq!(root_module.symbols.len(), 1);
-            assert_eq!(root_module.symbols[0].name, "TestEnum");
+            assert_eq!(symbol.name, "TestEnum");
             assert_eq!(
-                root_module.symbols[0].doc_comment.as_deref(),
+                symbol.doc_comment.as_deref(),
                 Some("A test enum\nwith variants"),
                 "Doc comment not extracted correctly"
             );
@@ -698,52 +644,41 @@ pub enum TestEnum {
     }
 
     mod traits {
-        use super::*;
+        use super::helpers::*;
 
         #[test]
         fn trait_without_doc_comment() {
-            let source = create_source_file(
-                "src/lib.rs",
-                r#"
+            let source_code = r#"
 pub trait TestTrait {
     fn test_method(&self);
 }
-"#,
-            );
+"#;
 
-            let sources = vec![source];
-            let modules = extract_modules(&sources).unwrap();
+            let symbol = extract_symbol(source_code, "TestTrait");
 
-            let root_module = get_namespace(&modules, "").unwrap();
-            assert_eq!(root_module.symbols.len(), 1);
-            assert_eq!(root_module.symbols[0].name, "TestTrait");
+            assert_eq!(symbol.name, "TestTrait");
             assert_eq!(
-                root_module.symbols[0].source_code.trim(),
+                symbol.source_code.trim(),
                 "pub trait TestTrait {\n    fn test_method(&self);\n}"
             );
+            assert_eq!(symbol.doc_comment, None);
         }
 
         #[test]
         fn trait_with_doc_comment() {
-            let source = create_source_file(
-                "src/lib.rs",
-                r#"
+            let source_code = r#"
 /// A test trait
 /// with a method
 pub trait TestTrait {
     fn test_method(&self);
 }
-"#,
-            );
+"#;
 
-            let sources = vec![source];
-            let modules = extract_modules(&sources).unwrap();
+            let symbol = extract_symbol(source_code, "TestTrait");
 
-            let root_module = get_namespace(&modules, "").unwrap();
-            assert_eq!(root_module.symbols.len(), 1);
-            assert_eq!(root_module.symbols[0].name, "TestTrait");
+            assert_eq!(symbol.name, "TestTrait");
             assert_eq!(
-                root_module.symbols[0].doc_comment.as_deref(),
+                symbol.doc_comment.as_deref(),
                 Some("A test trait\nwith a method"),
                 "Doc comment not extracted correctly"
             );
@@ -751,103 +686,117 @@ pub trait TestTrait {
     }
 
     mod modules {
-        use super::*;
+        use super::helpers::*;
 
         #[test]
         fn nested_modules_are_extracted() {
-            let source = create_source_file(
-                "src/text/mod.rs",
-                r#"
+            let source_code = r#"
 pub mod inner {
     pub fn nested_function() -> String {}
 }
 pub fn outer_function() -> i32 {}
-"#,
-            );
+"#;
 
-            let sources = vec![source];
-            let modules = extract_modules(&sources).unwrap();
-
-            assert!(modules.iter().any(|m| m.name == "text"));
-            assert!(modules.iter().any(|m| m.name == "text::inner"));
+            let modules = extract_modules_from_source("src/text/mod.rs", source_code);
 
             let text_module = modules.iter().find(|m| m.name == "text").unwrap();
-            assert_eq!(text_module.symbols.len(), 1);
-            assert_eq!(text_module.symbols[0].name, "outer_function");
-
             let inner_module = modules.iter().find(|m| m.name == "text::inner").unwrap();
-            assert_eq!(inner_module.symbols.len(), 1);
-            assert_eq!(inner_module.symbols[0].name, "nested_function");
+
+            assert_eq!(
+                text_module.symbols.len(),
+                1,
+                "text module should have one symbol"
+            );
+            assert_eq!(
+                text_module.symbols[0].name, "outer_function",
+                "text module should contain outer_function"
+            );
+
+            assert_eq!(
+                inner_module.symbols.len(),
+                1,
+                "inner module should have one symbol"
+            );
+            assert_eq!(
+                inner_module.symbols[0].name, "nested_function",
+                "inner module should contain nested_function"
+            );
         }
 
         #[test]
         fn private_modules_are_ignored() {
-            let source = create_source_file(
-                "src/text/mod.rs",
-                r#"
+            let source_code = r#"
 mod private {
     pub fn private_function() -> String {}
 }
 pub fn public_function() -> i32 {}
-"#,
-            );
+"#;
 
-            let sources = vec![source];
-            let modules = extract_modules(&sources).unwrap();
+            let modules = extract_modules_from_source("src/text/mod.rs", source_code);
 
             assert_eq!(modules.len(), 1);
-            assert_eq!(modules[0].name, "text");
-            assert_eq!(modules[0].symbols.len(), 1);
-            assert_eq!(modules[0].symbols[0].name, "public_function");
+            let text_module = modules.iter().find(|m| m.name == "text").unwrap();
+
+            assert_eq!(
+                text_module.symbols.len(),
+                1,
+                "text module should have one symbol"
+            );
+            assert_eq!(
+                text_module.symbols[0].name, "public_function",
+                "text module should contain public_function"
+            );
         }
 
         #[test]
         fn empty_modules_are_included() {
-            let source = create_source_file(
-                "src/text/mod.rs",
-                r#"
+            let source_code = r#"
 pub mod empty {}
-"#,
-            );
+"#;
 
-            let sources = vec![source];
-            let modules = extract_modules(&sources).unwrap();
+            let modules = extract_modules_from_source("src/text/mod.rs", source_code);
 
             assert_eq!(modules.len(), 2); // text and text::empty
 
             let text_module = modules.iter().find(|m| m.name == "text").unwrap();
-            assert!(text_module.symbols.is_empty()); // The empty module is not a symbol
-
             let empty_module = modules.iter().find(|m| m.name == "text::empty").unwrap();
-            assert!(empty_module.symbols.is_empty());
+
+            assert!(
+                text_module.symbols.is_empty(),
+                "text module should have no symbols"
+            );
+            assert!(
+                empty_module.symbols.is_empty(),
+                "empty module should have no symbols"
+            );
         }
 
         #[test]
         fn nested_module_symbols_are_extracted() {
-            let source = create_source_file(
-                "src/text/mod.rs",
-                r#"
+            let source_code = r#"
 pub mod inner {
     pub struct InnerStruct {}
     pub fn inner_function() {}
-    
+
     pub mod deeper {
         pub enum DeeperEnum {
             A, B
         }
     }
 }
-"#,
-            );
+"#;
 
-            let sources = vec![source];
-            let modules = extract_modules(&sources).unwrap();
+            let modules = extract_modules_from_source("src/text/mod.rs", source_code);
 
-            // Find the inner module
             let inner_module = modules
                 .iter()
                 .find(|m| m.name == "text::inner")
                 .expect("inner module should exist");
+
+            let deeper_module = modules
+                .iter()
+                .find(|m| m.name == "text::inner::deeper")
+                .expect("deeper module should exist");
 
             assert_eq!(
                 inner_module.symbols.len(),
@@ -866,12 +815,6 @@ pub mod inner {
                 "inner module should contain inner_function"
             );
 
-            // Find the deeper module
-            let deeper_module = modules
-                .iter()
-                .find(|m| m.name == "text::inner::deeper")
-                .expect("deeper module should exist");
-
             assert_eq!(
                 deeper_module.symbols.len(),
                 1,
@@ -884,159 +827,163 @@ pub mod inner {
         }
 
         #[test]
-        fn module_symbols_are_extracted_with_declarations() {
-            let source = create_source_file(
-                "src/text/mod.rs",
-                r#"
-pub mod inner {
-    pub struct InnerStruct {}
-    pub fn inner_function() {}
-}
-"#,
-            );
-
-            let sources = vec![source];
-            let modules = extract_modules(&sources).unwrap();
-
-            // The module should appear exactly once
-            let inner_modules: Vec<_> =
-                modules.iter().filter(|m| m.name == "text::inner").collect();
-
-            assert_eq!(
-                inner_modules.len(),
-                1,
-                "inner module should appear exactly once"
-            );
-
-            let inner_module = &inner_modules[0];
-            assert_eq!(
-                inner_module.symbols.len(),
-                2,
-                "inner module should have exactly two symbols"
-            );
-        }
-
-        #[test]
         fn module_declarations_are_added_as_symbols() {
-            let source = create_source_file(
-                "src/text/mod.rs",
-                r#"
+            let source_code = r#"
 pub mod other;  // This should be added as a symbol
 pub mod inner {  // This should be processed as a module
     pub fn inner_function() {}
 }
-"#,
-            );
+"#;
 
-            let sources = vec![source];
-            let modules = extract_modules(&sources).unwrap();
+            let modules = extract_modules_from_source("src/text/mod.rs", source_code);
 
             assert_eq!(modules.len(), 2); // text and text::inner
 
             let text_module = modules.iter().find(|m| m.name == "text").unwrap();
-            assert_eq!(text_module.symbols.len(), 1);
-            assert_eq!(text_module.symbols[0].name, "other"); // The module declaration becomes a symbol
-
             let inner_module = modules.iter().find(|m| m.name == "text::inner").unwrap();
-            assert_eq!(inner_module.symbols.len(), 1);
-            assert_eq!(inner_module.symbols[0].name, "inner_function");
+
+            assert_eq!(
+                text_module.symbols.len(),
+                1,
+                "text module should have one symbol"
+            );
+            assert_eq!(
+                text_module.symbols[0].name, "other",
+                "Module declaration should be added as a symbol"
+            );
+
+            assert_eq!(
+                inner_module.symbols.len(),
+                1,
+                "inner module should have one symbol"
+            );
+            assert_eq!(
+                inner_module.symbols[0].name, "inner_function",
+                "inner module should contain inner_function"
+            );
         }
     }
 
     mod visibility {
-        use super::*;
+        use super::helpers::*;
 
         #[test]
         fn private_items_are_ignored() {
-            let source = create_source_file(
-                "src/text/mod.rs",
-                r#"
+            let source_code = r#"
 struct PrivateStruct {}
 fn private_function() {}
 pub fn public_function() -> () {}
-"#,
+"#;
+
+            let modules = extract_modules_from_source("src/text/mod.rs", source_code);
+            let module = modules.iter().find(|m| m.name == "text").unwrap();
+
+            assert_eq!(
+                module.symbols.len(),
+                1,
+                "Only public_function should be extracted"
             );
-
-            let sources = vec![source];
-            let modules = extract_modules(&sources).unwrap();
-
-            assert_eq!(modules.len(), 1);
-            let module = &modules[0];
-            assert_eq!(module.name, "text");
-            assert_eq!(module.symbols.len(), 1);
-            assert_eq!(module.symbols[0].name, "public_function");
+            assert_eq!(
+                module.symbols[0].name, "public_function",
+                "public_function should be extracted"
+            );
         }
 
         #[test]
         fn lib_items_are_processed() {
-            let source = create_source_file(
-                "src/lib.rs",
-                r#"
+            let source_code = r#"
 pub fn root_function() -> () {}
 pub struct RootStruct {}
 
 pub mod text {
     pub fn text_function() -> () {}
 }
-"#,
+"#;
+
+            let modules = extract_modules_from_source("src/lib.rs", source_code);
+            let root_module = modules.iter().find(|m| m.name.is_empty()).unwrap();
+            let text_module = modules.iter().find(|m| m.name == "text").unwrap();
+
+            assert_eq!(
+                root_module.symbols.len(),
+                2,
+                "Root module should have two symbols"
+            );
+            assert!(
+                root_module
+                    .symbols
+                    .iter()
+                    .any(|s| s.name == "root_function"),
+                "Root module should contain root_function"
+            );
+            assert!(
+                root_module.symbols.iter().any(|s| s.name == "RootStruct"),
+                "Root module should contain RootStruct"
             );
 
-            let sources = vec![source];
-            let modules = extract_modules(&sources).unwrap();
-
-            assert_eq!(modules.len(), 2);
-
-            let root_module = modules.iter().find(|m| m.name.is_empty()).unwrap();
-            assert_eq!(root_module.symbols.len(), 2);
-            assert!(root_module
-                .symbols
-                .iter()
-                .any(|s| s.name == "root_function"));
-            assert!(root_module.symbols.iter().any(|s| s.name == "RootStruct"));
-
-            let text_module = modules.iter().find(|m| m.name == "text").unwrap();
-            assert_eq!(text_module.symbols.len(), 1);
-            assert_eq!(text_module.symbols[0].name, "text_function");
+            assert_eq!(
+                text_module.symbols.len(),
+                1,
+                "Text module should have one symbol"
+            );
+            assert_eq!(
+                text_module.symbols[0].name, "text_function",
+                "Text module should contain text_function"
+            );
         }
     }
 
     mod edge_cases {
-        use super::*;
+        use super::helpers::*;
 
         #[test]
         fn empty_source_file() {
-            let source = create_source_file("src/empty.rs", "");
+            let source_code = "";
 
-            let sources = vec![source];
-            let modules = extract_modules(&sources).unwrap();
-            assert_eq!(modules.len(), 1); // An empty file still creates a module
+            let modules = extract_modules_from_source("src/empty.rs", source_code);
+
+            assert_eq!(modules.len(), 1, "An empty file still creates a module");
             assert_eq!(modules[0].name, "empty");
-            assert!(modules[0].symbols.is_empty()); // But it has no symbols
+            assert!(
+                modules[0].symbols.is_empty(),
+                "Module should have no symbols"
+            );
         }
 
         #[test]
         fn whitespace_only_source() {
-            let source = create_source_file("src/whitespace.rs", "  \n\t  \n");
+            let source_code = "  \n\t  \n";
 
-            let sources = vec![source];
-            let modules = extract_modules(&sources).unwrap();
-            assert_eq!(modules.len(), 1); // A whitespace-only file still creates a module
+            let modules = extract_modules_from_source("src/whitespace.rs", source_code);
+
+            assert_eq!(
+                modules.len(),
+                1,
+                "A whitespace-only file still creates a module"
+            );
             assert_eq!(modules[0].name, "whitespace");
-            assert!(modules[0].symbols.is_empty()); // But it has no symbols
+            assert!(
+                modules[0].symbols.is_empty(),
+                "Module should have no symbols"
+            );
         }
 
         #[test]
         fn comments_only_source() {
-            let source = create_source_file(
-                "src/comments.rs",
-                "// Just a comment\n/* Another comment */",
-            );
+            let source_code = "// Just a comment\n/* Another comment */";
 
-            let sources = vec![source];
-            let modules = extract_modules(&sources).unwrap();
-            assert_eq!(modules.len(), 1); // A file with only comments still creates a module
+            let modules = extract_modules_from_source("src/comments.rs", source_code);
+
+            assert_eq!(
+                modules.len(),
+                1,
+                "A file with only comments still creates a module"
+            );
             assert_eq!(modules[0].name, "comments");
-            assert!(modules[0].symbols.is_empty()); // But it has no symbols
+            assert!(
+                modules[0].symbols.is_empty(),
+                "Module should have no symbols"
+            );
         }
     }
 }
