@@ -15,10 +15,11 @@
 
 - All the branches of each unit under test should be covered, preferably with a unit test for each branch. In other words, each unit test should cover exactly one scenario.
 - When changing the unit under test, make sure to add, update and/or remove tests accordingly.
+- Only test the public API of the unit under test.
 - Run the tests after making changes to the codebase.
 - Run the tests with `RUST_BACKTRACE=full`.
 - Prefer specialised assertions (e.g. equality checks) over simple boolean assertions.
-- Add a helpful yet succinct message to each assertion so that we don't have to add temporary debug statements when the assertion fails.
+- When writing a boolean assertion, add a helpful yet succinct assertion message that explains the failure so that we don't have to add temporary debug statements when the assertion fails.
 - When a test fails, think critically about the cause of the failure, and consider the requirements. The issue may be the test or the unit under test.
 
 # Troubleshooting
