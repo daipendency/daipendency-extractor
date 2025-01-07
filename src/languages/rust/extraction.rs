@@ -141,11 +141,24 @@ fn extract_outer_doc_comments(node: &Node, source_code: &str) -> Result<String, 
     let mut current = node.prev_sibling();
     
     while let Some(sibling) = current {
-        if sibling.kind() == "line_comment" {
-            let comment_text = sibling.utf8_text(source_code.as_bytes())
-                .map_err(|e| LaibraryError::Parse(e.to_string()))?;
-            if comment_text.starts_with("///") {
-                doc_comments.push(comment_text);
+        if sibling.kind() == "line_comment" || sibling.kind() == "block_comment" {
+            let mut cursor = sibling.walk();
+            let children: Vec<_> = sibling.children(&mut cursor).collect();
+            
+            if !children.iter().any(|c| c.kind() == "outer_doc_comment_marker") {
+                current = sibling.prev_sibling();
+                continue;
+            }
+
+            if let Some(doc_node) = children.iter().find(|child| child.kind() == "doc_comment") {
+                if sibling.kind() == "line_comment" {
+                    doc_comments.push(format!("///{}", doc_node.utf8_text(source_code.as_bytes())
+                        .map_err(|e| LaibraryError::Parse(e.to_string()))?));
+                } else {
+                    doc_comments.push(sibling.utf8_text(source_code.as_bytes())
+                        .map_err(|e| LaibraryError::Parse(e.to_string()))?
+                        .to_string());
+                }
             }
         }
         current = sibling.prev_sibling();
@@ -203,6 +216,135 @@ mod tests {
             path: PathBuf::from(path),
             content: content.to_string(),
             tree,
+        }
+    }
+
+    mod doc_comments {
+        use super::*;
+
+        fn get_first_item_node(source: &SourceFile) -> Node {
+            let root = source.tree.root_node();
+            let mut cursor = root.walk();
+            let node = root.children(&mut cursor)
+                .find(|node| matches!(node.kind(), "function_item" | "struct_item" | "enum_item" | "trait_item"))
+                .expect("No item found in source");
+            node
+        }
+
+        #[test]
+        fn single_line_outer_doc_comment() {
+            let source = create_source_file(
+                "test.rs",
+                r#"
+/// A documented item
+struct Test {}
+"#,
+            );
+
+            let item = get_first_item_node(&source);
+            let doc = extract_outer_doc_comments(&item, &source.content).unwrap();
+            assert_eq!(doc, "/// A documented item\n", "Single line outer doc comment not extracted correctly");
+        }
+
+        #[test]
+        fn multiple_line_outer_doc_comments() {
+            let source = create_source_file(
+                "test.rs",
+                r#"
+/// First line
+/// Second line
+/// Third line
+struct Test {}
+"#,
+            );
+
+            let item = get_first_item_node(&source);
+            let doc = extract_outer_doc_comments(&item, &source.content).unwrap();
+            assert_eq!(
+                doc,
+                "/// First line\n/// Second line\n/// Third line\n",
+                "Multiple line outer doc comments not extracted correctly"
+            );
+        }
+
+        #[test]
+        fn ignores_inner_doc_comments() {
+            let source = create_source_file(
+                "test.rs",
+                r#"
+/// Outer doc
+//! Inner doc
+struct Test {}
+"#,
+            );
+
+            let item = get_first_item_node(&source);
+            let doc = extract_outer_doc_comments(&item, &source.content).unwrap();
+            assert_eq!(
+                doc,
+                "/// Outer doc\n",
+                "Inner doc comment was incorrectly included"
+            );
+        }
+
+        #[test]
+        fn ignores_regular_comments() {
+            let source = create_source_file(
+                "test.rs",
+                r#"
+/// Doc comment
+// Regular comment
+struct Test {}
+"#,
+            );
+
+            let item = get_first_item_node(&source);
+            let doc = extract_outer_doc_comments(&item, &source.content).unwrap();
+            assert_eq!(
+                doc,
+                "/// Doc comment\n",
+                "Regular comment was incorrectly included"
+            );
+        }
+
+        #[test]
+        fn empty_when_no_doc_comments() {
+            let source = create_source_file(
+                "test.rs",
+                r#"
+struct Test {}
+"#,
+            );
+
+            let item = get_first_item_node(&source);
+            let doc = extract_outer_doc_comments(&item, &source.content).unwrap();
+            assert_eq!(
+                doc,
+                "",
+                "Empty string expected when no doc comments present"
+            );
+        }
+
+        #[test]
+        fn block_doc_comments() {
+            let source = create_source_file(
+                "test.rs",
+                r#"
+/** A block doc comment
+ * with multiple lines
+ * and some indentation
+ */
+struct Test {}
+"#,
+            );
+
+            let item = get_first_item_node(&source);
+            let doc = extract_outer_doc_comments(&item, &source.content).unwrap();
+            assert_eq!(
+                doc,
+                "/** A block doc comment\n * with multiple lines\n * and some indentation\n */",
+                "Block doc comment not extracted correctly"
+            );
         }
     }
 
