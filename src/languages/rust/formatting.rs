@@ -33,12 +33,13 @@ mod tests {
                     }
                 }
                 symbols.push(Symbol {
-                    name,
+                    name: name.to_string(),
                     node,
                     source_code: node
                         .utf8_text(content.as_bytes())
                         .expect("Failed to get node text")
                         .to_string(),
+                    doc_comment: None,
                 });
             }
         }
