@@ -1,15 +1,27 @@
 use crate::error::LaibraryError;
-use crate::types::Namespace;
+use crate::types::{Namespace, Symbol};
 
 pub fn format_module(module: &Namespace) -> Result<String, LaibraryError> {
-    let mut module_doc = String::new();
-    for symbol in &module.symbols {
-        if !module_doc.is_empty() {
-            module_doc.push('\n');
-        }
-        module_doc.push_str(&symbol.source_code);
-    }
+    let module_doc = module
+        .symbols
+        .iter()
+        .map(|symbol| format_symbol(symbol))
+        .collect::<Vec<_>>()
+        .join("\n\n");
     Ok(module_doc)
+}
+
+fn format_symbol(symbol: &Symbol) -> String {
+    let mut formatted = String::new();
+    if let Some(doc) = &symbol.doc_comment {
+        formatted.push_str(
+            &doc.lines()
+                .map(|line| format!("/// {}\n", line))
+                .collect::<String>(),
+        );
+    }
+    formatted.push_str(&symbol.source_code);
+    formatted
 }
 
 #[cfg(test)]
@@ -83,5 +95,44 @@ pub enum TestEnum { A, B }"#;
 
         let formatted = format_module(&empty_module).unwrap();
         assert!(formatted.is_empty());
+    }
+
+    #[test]
+    fn test_format_module_with_doc_comment() {
+        let mut parser = Parser::new();
+        parser
+            .set_language(&tree_sitter_rust::LANGUAGE.into())
+            .unwrap();
+
+        let content = "pub fn test() -> () {}";
+        let tree = parser.parse(content, None).unwrap();
+        let mut test_module = create_test_module("test", content, &tree);
+        test_module.symbols[0].doc_comment = Some("This is a test function".to_string());
+
+        let formatted = format_module(&test_module).unwrap();
+        assert_eq!(
+            formatted, "/// This is a test function\npub fn test() -> () {}",
+            "Doc comment should be prepended with /// and a newline"
+        );
+    }
+
+    #[test]
+    fn test_format_module_with_multiline_doc_comment() {
+        let mut parser = Parser::new();
+        parser
+            .set_language(&tree_sitter_rust::LANGUAGE.into())
+            .unwrap();
+
+        let content = "pub fn test() -> () {}";
+        let tree = parser.parse(content, None).unwrap();
+        let mut test_module = create_test_module("test", content, &tree);
+        test_module.symbols[0].doc_comment =
+            Some("First line\nSecond line\nThird line".to_string());
+
+        let formatted = format_module(&test_module).unwrap();
+        assert_eq!(
+            formatted, "/// First line\n/// Second line\n/// Third line\npub fn test() -> () {}",
+            "Multi-line doc comments should have /// prefix for each line"
+        );
     }
 }
