@@ -35,8 +35,8 @@ pub fn format_library_context(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::Symbol;
-    use tree_sitter::{Parser, Tree};
+    use crate::types::{SourceFile, Symbol};
+    use tree_sitter::Parser;
 
     struct TestAnalyser;
 
@@ -56,10 +56,10 @@ mod tests {
             unimplemented!()
         }
 
-        fn extract_public_api<'a>(
+        fn extract_public_api(
             &self,
-            _sources: &'a [crate::types::SourceFile],
-        ) -> Result<Vec<Namespace<'a>>, LaibraryError> {
+            _sources: &[SourceFile],
+        ) -> Result<Vec<Namespace>, LaibraryError> {
             unimplemented!()
         }
 
@@ -75,39 +75,14 @@ mod tests {
         }
     }
 
-    fn create_test_namespace<'tree>(
-        name: &str,
-        content: &str,
-        tree: &'tree Tree,
-    ) -> Namespace<'tree> {
-        let root_node = tree.root_node();
-        let mut symbols = Vec::new();
-        let mut cursor = root_node.walk();
-
-        for node in root_node.children(&mut cursor) {
-            if matches!(node.kind(), "function_item" | "struct_item" | "enum_item") {
-                let mut name = String::new();
-                for child in node.children(&mut node.walk()) {
-                    if child.kind() == "identifier" {
-                        name = content[child.start_byte()..child.end_byte()].to_string();
-                        break;
-                    }
-                }
-                symbols.push(Symbol {
-                    name: name.to_string(),
-                    node,
-                    source_code: node
-                        .utf8_text(content.as_bytes())
-                        .expect("Failed to get node text")
-                        .to_string(),
-                    doc_comment: None,
-                });
-            }
-        }
-
+    fn create_namespace(name: &str, source_code: &str, doc_comment: Option<&str>) -> Namespace {
         Namespace {
             name: name.to_string(),
-            symbols,
+            symbols: vec![Symbol {
+                name: name.to_string(),
+                source_code: source_code.to_string(),
+                doc_comment: doc_comment.map(String::from),
+            }],
         }
     }
 
@@ -127,12 +102,12 @@ mod tests {
         let content = r#"pub fn test() -> () {}
 pub struct Test { field: String }
 pub enum TestEnum { A, B }"#;
-        let tree = parser.parse(content, None).unwrap();
-        let test_namespace = create_test_namespace("test", content, &tree);
+        let _tree = parser.parse(content, None).unwrap();
+        let test_namespace = create_namespace("test", content, None);
 
         let empty_content = "";
-        let empty_tree = parser.parse(empty_content, None).unwrap();
-        let empty_namespace = create_test_namespace("empty", empty_content, &empty_tree);
+        let _empty_tree = parser.parse(empty_content, None).unwrap();
+        let empty_namespace = create_namespace("empty", empty_content, None);
 
         let namespaces = vec![test_namespace, empty_namespace];
         let analyser = TestAnalyser;

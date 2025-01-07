@@ -34,10 +34,7 @@ impl Analyser for RustAnalyser {
         metadata::extract_metadata(path)
     }
 
-    fn extract_public_api<'a>(
-        &self,
-        sources: &'a [SourceFile],
-    ) -> Result<Vec<Namespace<'a>>, LaibraryError> {
+    fn extract_public_api(&self, sources: &[SourceFile]) -> Result<Vec<Namespace>, LaibraryError> {
         extraction::extract_modules(sources)
     }
 

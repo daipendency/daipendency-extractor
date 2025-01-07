@@ -28,12 +28,11 @@ fn format_symbol(symbol: &Symbol) -> String {
 mod tests {
     use super::*;
 
-    fn create_symbol(name: &str, source_code: &str, doc_comment: Option<&str>) -> Symbol<'static> {
+    fn create_symbol(name: &str, source_code: &str, doc_comment: Option<&str>) -> Symbol {
         Symbol {
             name: name.to_string(),
-            node: unsafe { std::mem::zeroed() }, // We don't use the node in formatting
             source_code: source_code.to_string(),
-            doc_comment: doc_comment.map(String::from),
+            doc_comment: doc_comment.map(|s| s.to_string()),
         }
     }
 
@@ -50,8 +49,7 @@ mod tests {
         let formatted = format_module(&module).unwrap();
 
         assert_eq!(
-            formatted,
-            "pub fn test() -> () {}\n\npub enum TestEnum { A, B }",
+            formatted, "pub fn test() -> () {}\n\npub enum TestEnum { A, B }",
             "Module should format all symbols with double newlines between them"
         );
     }

@@ -3,7 +3,7 @@ use crate::types::{Namespace, SourceFile, Symbol};
 use std::path::Path;
 use tree_sitter::Node;
 
-pub fn extract_modules(sources: &[SourceFile]) -> Result<Vec<Namespace<'_>>, LaibraryError> {
+pub fn extract_modules(sources: &[SourceFile]) -> Result<Vec<Namespace>, LaibraryError> {
     let mut modules = Vec::new();
 
     for source in sources {
@@ -19,11 +19,11 @@ pub fn extract_modules(sources: &[SourceFile]) -> Result<Vec<Namespace<'_>>, Lai
     Ok(modules)
 }
 
-fn extract_modules_from_module<'a>(
-    module_node: Node<'a>,
+fn extract_modules_from_module(
+    module_node: Node,
     source_code: &str,
     module_path: String,
-) -> Result<Vec<Namespace<'a>>, LaibraryError> {
+) -> Result<Vec<Namespace>, LaibraryError> {
     let mut modules = Vec::new();
     let mut symbols = Vec::new();
     let mut cursor = module_node.walk();
@@ -44,7 +44,6 @@ fn extract_modules_from_module<'a>(
 
                     symbols.push(Symbol {
                         name,
-                        node: child,
                         source_code,
                         doc_comment,
                     });
@@ -76,7 +75,6 @@ fn extract_modules_from_module<'a>(
                     // Add module declaration as a symbol
                     symbols.push(Symbol {
                         name: mod_name,
-                        node: child,
                         source_code: child
                             .utf8_text(source_code.as_bytes())
                             .map_err(|e| LaibraryError::Parse(e.to_string()))?
@@ -275,7 +273,7 @@ mod tests {
         }
     }
 
-    fn get_namespace<'a>(modules: &'a [Namespace], name: &str) -> Option<&'a Namespace<'a>> {
+    fn get_namespace<'a>(modules: &'a [Namespace], name: &str) -> Option<&'a Namespace> {
         modules.iter().find(|m| m.name == name)
     }
 
