@@ -45,7 +45,7 @@ impl Analyser for RustAnalyser {
         Ok(modules)
     }
 
-    fn format_namespace(&self, module: &Namespace) -> Result<String, LaibraryError> {
+    fn format_namespace(&self, module: &Namespace) -> String {
         formatting::format_module(module)
     }
 }

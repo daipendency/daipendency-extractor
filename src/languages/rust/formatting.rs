@@ -1,14 +1,13 @@
-use crate::error::LaibraryError;
 use crate::types::Namespace;
 
-pub fn format_module(module: &Namespace) -> Result<String, LaibraryError> {
+pub fn format_module(module: &Namespace) -> String {
     let module_doc = module
         .symbols
         .iter()
         .map(|symbol| symbol.source_code.as_str())
         .collect::<Vec<_>>()
         .join("\n\n");
-    Ok(module_doc)
+    module_doc
 }
 
 #[cfg(test)]
@@ -32,7 +31,7 @@ mod tests {
             ],
         };
 
-        let formatted = format_module(&module).unwrap();
+        let formatted = format_module(&module);
         assert_eq!(
             formatted, "pub fn test() -> () {}\n\npub enum TestEnum { A, B }",
             "Module should format all symbols with double newlines between them"

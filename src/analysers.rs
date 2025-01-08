@@ -8,5 +8,5 @@ pub trait Analyser {
     fn get_parser_language(&self) -> Language;
     fn get_package_metadata(&self, path: &Path) -> Result<PackageMetadata, LaibraryError>;
     fn extract_public_api(&self, sources: &[SourceFile]) -> Result<Vec<Namespace>, LaibraryError>;
-    fn format_namespace(&self, namespace: &Namespace) -> Result<String, LaibraryError>;
+    fn format_namespace(&self, namespace: &Namespace) -> String;
 }

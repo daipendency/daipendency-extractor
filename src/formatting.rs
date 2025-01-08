@@ -7,15 +7,7 @@ pub fn format_library_context(
     namespaces: &[Namespace],
     analyser: &dyn Analyser,
 ) -> Result<String, LaibraryError> {
-    let mut api_content = String::new();
-
-    for namespace in namespaces {
-        api_content.push_str(&format!(
-            "        <namespace name=\"{}\">\n{}\n        </namespace>\n",
-            namespace.name,
-            analyser.format_namespace(namespace)?
-        ));
-    }
+    let api_content = format_namespace_content(namespaces, analyser);
 
     Ok(format!(
         r#"<library name="{name}" version="{version}">
@@ -30,6 +22,19 @@ pub fn format_library_context(
         version = metadata.version,
         documentation = metadata.documentation.trim()
     ))
+}
+
+fn format_namespace_content(namespaces: &[Namespace], analyser: &dyn Analyser) -> String {
+    let mut api_content = String::new();
+
+    for namespace in namespaces {
+        api_content.push_str(&format!(
+            "        <namespace name=\"{}\">\n{}\n        </namespace>\n",
+            namespace.name,
+            analyser.format_namespace(namespace)
+        ));
+    }
+    api_content
 }
 
 #[cfg(test)]
@@ -63,7 +68,7 @@ mod tests {
             unimplemented!()
         }
 
-        fn format_namespace(&self, namespace: &Namespace) -> Result<String, LaibraryError> {
+        fn format_namespace(&self, namespace: &Namespace) -> String {
             let mut namespace_doc = String::new();
             for symbol in &namespace.symbols {
                 if !namespace_doc.is_empty() {
@@ -71,7 +76,7 @@ mod tests {
                 }
                 namespace_doc.push_str(&symbol.source_code);
             }
-            Ok(namespace_doc)
+            namespace_doc
         }
     }
 
