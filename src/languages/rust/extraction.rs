@@ -26,23 +26,21 @@ fn extract_modules_from_module(
 
         match child.kind() {
             "function_item" | "struct_item" | "enum_item" | "trait_item" | "macro_definition" => {
-                if let Some(name) = extract_name(&child, source_code) {
-                    let doc_comment = extract_outer_doc_comments(&child, source_code)?;
-                    let source_code = child
-                        .utf8_text(source_code.as_bytes())
-                        .map_err(|e| LaibraryError::Parse(e.to_string()))?
-                        .to_string();
+                let name = extract_name(&child, source_code)?;
+                let doc_comment = extract_outer_doc_comments(&child, source_code)?;
+                let source_code = child
+                    .utf8_text(source_code.as_bytes())
+                    .map_err(|e| LaibraryError::Parse(e.to_string()))?
+                    .to_string();
 
-                    symbols.push(Symbol {
-                        name,
-                        source_code,
-                        doc_comment,
-                    });
-                }
+                symbols.push(Symbol {
+                    name,
+                    source_code,
+                    doc_comment,
+                });
             }
             "mod_item" => {
-                let mod_name = extract_name(&child, source_code)
-                    .ok_or_else(|| LaibraryError::Parse("Invalid module name".to_string()))?;
+                let mod_name = extract_name(&child, source_code)?;
                 let new_module_path = format!("{}::{}", module_path, mod_name);
 
                 // Look for the declaration_list node
@@ -218,16 +216,18 @@ fn is_public(node: &Node) -> bool {
     children.any(|child| child.kind() == "visibility_modifier")
 }
 
-fn extract_name(node: &Node, source_code: &str) -> Option<String> {
+fn extract_name(node: &Node, source_code: &str) -> Result<String, LaibraryError> {
     let mut cursor = node.walk();
-    for child in node.children(&mut cursor) {
-        if matches!(child.kind(), "identifier" | "type_identifier") {
-            if let Ok(text) = child.utf8_text(source_code.as_bytes()) {
-                return Some(text.to_string());
-            }
-        }
-    }
-    None
+    let mut children = node.children(&mut cursor);
+    children
+        .find(|child| matches!(child.kind(), "identifier" | "type_identifier"))
+        .and_then(|child| {
+            child
+                .utf8_text(source_code.as_bytes())
+                .map(|s| s.to_string())
+                .ok()
+        })
+        .ok_or_else(|| LaibraryError::Parse("Failed to extract name".to_string()))
 }
 
 #[cfg(test)]
