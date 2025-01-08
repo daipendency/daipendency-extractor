@@ -223,13 +223,11 @@ fn extract_outer_doc_comments(
     Ok(None)
 }
 
-fn is_public(node: &Node, source_code: &str) -> bool {
+fn is_public(node: &Node, _source_code: &str) -> bool {
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         if child.kind() == "visibility_modifier" {
-            if let Ok(text) = child.utf8_text(source_code.as_bytes()) {
-                return text == "pub";
-            }
+            return true;
         }
     }
     false
@@ -319,6 +317,34 @@ pub fn public_function() -> () {}
         let module = &modules[0];
         assert_eq!(module.symbols.len(), 1);
         assert_eq!(module.symbols[0].name, "public_function");
+    }
+
+    #[test]
+    fn crate_visible_symbols() {
+        let source_code = r#"
+pub(crate) fn crate_function() {}
+"#;
+
+        let modules = extract_modules_from_source("src/lib.rs", source_code);
+
+        assert_eq!(modules.len(), 1);
+        let module = &modules[0];
+        assert_eq!(module.symbols.len(), 1);
+        assert_eq!(module.symbols[0].name, "crate_function");
+    }
+
+    #[test]
+    fn super_visible_symbols() {
+        let source_code = r#"
+pub(super) fn super_function() {}
+"#;
+
+        let modules = extract_modules_from_source("src/lib.rs", source_code);
+
+        assert_eq!(modules.len(), 1);
+        let module = &modules[0];
+        assert_eq!(module.symbols.len(), 1);
+        assert_eq!(module.symbols[0].name, "super_function");
     }
 
     mod outer_doc_comments {
