@@ -1,11 +1,12 @@
 use crate::error::LaibraryError;
 use crate::types::{Namespace, Symbol};
+use std::fmt::Write;
 
 pub fn format_module(module: &Namespace) -> Result<String, LaibraryError> {
     let module_doc = module
         .symbols
         .iter()
-        .map(|symbol| format_symbol(symbol))
+        .map(format_symbol)
         .collect::<Vec<_>>()
         .join("\n\n");
     Ok(module_doc)
@@ -14,11 +15,10 @@ pub fn format_module(module: &Namespace) -> Result<String, LaibraryError> {
 fn format_symbol(symbol: &Symbol) -> String {
     let mut formatted = String::new();
     if let Some(doc) = &symbol.doc_comment {
-        formatted.push_str(
-            &doc.lines()
-                .map(|line| format!("/// {}\n", line))
-                .collect::<String>(),
-        );
+        doc.lines().fold(&mut formatted, |acc, line| {
+            let _ = writeln!(acc, "/// {}", line);
+            acc
+        });
     }
     formatted.push_str(&symbol.source_code);
     formatted
