@@ -14,6 +14,7 @@ pub fn format_module(module: &Namespace) -> Result<String, LaibraryError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::types::Symbol;
 
     #[test]
     fn test_format_module() {
