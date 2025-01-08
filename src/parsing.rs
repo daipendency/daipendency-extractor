@@ -3,7 +3,18 @@ use crate::types::SourceFile;
 use std::path::Path;
 use tree_sitter::{Language, Parser};
 
-pub fn parse_source_file(
+pub fn parse_source_files(
+    paths: &[String],
+    parser_language: &Language,
+) -> Result<Vec<SourceFile>, LaibraryError> {
+    let mut sources = Vec::new();
+    for file_path in paths {
+        sources.push(parse_source_file(Path::new(file_path), parser_language)?);
+    }
+    Ok(sources)
+}
+
+fn parse_source_file(
     file_path: &Path,
     parser_language: &Language,
 ) -> Result<SourceFile, LaibraryError> {
@@ -28,17 +39,6 @@ pub fn parse_source_file(
         content,
         tree,
     })
-}
-
-pub fn parse_source_files(
-    paths: &[String],
-    parser_language: &Language,
-) -> Result<Vec<SourceFile>, LaibraryError> {
-    let mut sources = Vec::new();
-    for file_path in paths {
-        sources.push(parse_source_file(Path::new(file_path), parser_language)?);
-    }
-    Ok(sources)
 }
 
 #[cfg(test)]
