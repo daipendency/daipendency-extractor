@@ -20,7 +20,7 @@ fn extract_modules_from_module(
     let mut cursor = module_node.walk();
 
     for child in module_node.children(&mut cursor) {
-        if !is_public(&child, source_code) {
+        if !is_public(&child) {
             continue;
         }
 
@@ -212,14 +212,10 @@ fn extract_outer_doc_comments(
     Ok(None)
 }
 
-fn is_public(node: &Node, _source_code: &str) -> bool {
+fn is_public(node: &Node) -> bool {
     let mut cursor = node.walk();
-    for child in node.children(&mut cursor) {
-        if child.kind() == "visibility_modifier" {
-            return true;
-        }
-    }
-    false
+    let mut children = node.children(&mut cursor);
+    children.any(|child| child.kind() == "visibility_modifier")
 }
 
 fn extract_name(node: &Node, source_code: &str) -> Option<String> {
