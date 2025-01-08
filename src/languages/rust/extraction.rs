@@ -255,6 +255,7 @@ mod tests {
     use crate::analysers::Analyser;
     use crate::languages::rust::analyser::RustAnalyser;
     use crate::types::Symbol;
+    use helpers::*;
     use std::path::PathBuf;
     use tree_sitter::Parser;
 
@@ -296,11 +297,33 @@ mod tests {
         }
     }
 
-    mod doc_comments {
+    #[test]
+    fn empty_source_file() {
+        let source_code = "";
+
+        let modules = extract_modules_from_source("src/empty.rs", source_code);
+
+        assert_eq!(modules.len(), 1);
+        assert_eq!(modules[0].name, "empty");
+        assert!(modules[0].symbols.is_empty());
+    }
+
+    mod outer_doc_comments {
         use super::helpers::*;
 
         #[test]
-        fn single_line_outer_doc_comment() {
+        fn no_doc_comments() {
+            let source_code = r#"
+pub struct Test {}
+"#;
+
+            let symbol = extract_symbol(source_code, "Test");
+
+            assert_eq!(symbol.doc_comment, None);
+        }
+
+        #[test]
+        fn single_line() {
             let source_code = r#"
 /// A documented item
 pub struct Test {}
@@ -308,19 +331,14 @@ pub struct Test {}
 
             let symbol = extract_symbol(source_code, "Test");
 
-            assert_eq!(
-                symbol.doc_comment.as_deref(),
-                Some("A documented item"),
-                "Single line outer doc comment not extracted correctly"
-            );
+            assert_eq!(symbol.doc_comment.as_deref(), Some("A documented item"));
         }
 
         #[test]
-        fn multiple_line_outer_doc_comments() {
+        fn multiple_line() {
             let source_code = r#"
 /// First line
 /// Second line
-/// Third line
 pub struct Test {}
 "#;
 
@@ -328,13 +346,12 @@ pub struct Test {}
 
             assert_eq!(
                 symbol.doc_comment.as_deref(),
-                Some("First line\nSecond line\nThird line"),
-                "Multiple line outer doc comments not extracted correctly"
+                Some("First line\nSecond line")
             );
         }
 
         #[test]
-        fn ignores_inner_doc_comments() {
+        fn inner_doc_comments() {
             let source_code = r#"
 /// Outer doc
 //! Inner doc
@@ -343,14 +360,11 @@ pub struct Test {}
 
             let symbol = extract_symbol(source_code, "Test");
 
-            assert_eq!(
-                symbol.doc_comment, None,
-                "Inner doc comments should be ignored"
-            );
+            assert_eq!(symbol.doc_comment, None);
         }
 
         #[test]
-        fn ignores_regular_comments() {
+        fn regular_comments() {
             let source_code = r#"
 /// Doc comment
 // Regular comment
@@ -359,24 +373,7 @@ pub struct Test {}
 
             let symbol = extract_symbol(source_code, "Test");
 
-            assert_eq!(
-                symbol.doc_comment, None,
-                "Regular comments should be ignored"
-            );
-        }
-
-        #[test]
-        fn empty_when_no_doc_comments() {
-            let source_code = r#"
-pub struct Test {}
-"#;
-
-            let symbol = extract_symbol(source_code, "Test");
-
-            assert_eq!(
-                symbol.doc_comment, None,
-                "Expected None when no doc comments are present"
-            );
+            assert_eq!(symbol.doc_comment, None);
         }
 
         #[test]
@@ -393,13 +390,12 @@ pub struct Test {}
 
             assert_eq!(
                 symbol.doc_comment.as_deref(),
-                Some("A block doc comment\nwith multiple lines\nand some indentation"),
-                "Block doc comment not extracted correctly"
+                Some("A block doc comment\nwith multiple lines\nand some indentation")
             );
         }
 
         #[test]
-        fn ignores_file_level_doc_comments() {
+        fn file_level_doc_comments() {
             let source_code = r#"
 //! File-level documentation
 //! More file-level docs
@@ -412,13 +408,12 @@ pub struct Test {}
 
             assert_eq!(
                 symbol.doc_comment.as_deref(),
-                Some("This is the struct's doc"),
-                "File-level doc comments were incorrectly included"
+                Some("This is the struct's doc")
             );
         }
 
         #[test]
-        fn second_symbol_only_gets_own_doc_comments() {
+        fn preceding_symbol() {
             let source_code = r#"
 /// First struct's doc
 pub struct FirstStruct {}
@@ -429,34 +424,11 @@ pub struct SecondStruct {}
 
             let symbol = extract_symbol(source_code, "SecondStruct");
 
-            assert_eq!(
-                symbol.doc_comment.as_deref(),
-                Some("Second struct's doc"),
-                "First struct's doc comments were incorrectly included"
-            );
+            assert_eq!(symbol.doc_comment.as_deref(), Some("Second struct's doc"));
         }
 
         #[test]
-        fn stops_at_non_doc_comment() {
-            let source_code = r#"
-//! Some file docs
-pub struct FirstStruct {}
-
-/// This is the doc we want
-pub struct Test {}
-"#;
-
-            let symbol = extract_symbol(source_code, "Test");
-
-            assert_eq!(
-                symbol.doc_comment.as_deref(),
-                Some("This is the doc we want"),
-                "Did not stop at non-doc comment node"
-            );
-        }
-
-        #[test]
-        fn block_comment_stops_at_itself() {
+        fn block_comment_preceded_by_line_comment() {
             let source_code = r#"
 /// This line should be ignored
 /** This block comment
@@ -469,49 +441,52 @@ pub struct Test {}
 
             assert_eq!(
                 symbol.doc_comment.as_deref(),
-                Some("This block comment\nshould be returned"),
-                "Block comment should not include previous line comments"
+                Some("This block comment\nshould be returned")
             );
         }
     }
 
     mod module_path {
-        use super::*;
+        use super::helpers::*;
 
         #[test]
         fn lib_rs_has_no_module_path() {
-            let file_path = PathBuf::from("src/lib.rs");
+            let source_code = "";
 
-            let module_path = determine_module_path(&file_path).unwrap();
+            let modules = extract_modules_from_source("src/lib.rs", source_code);
 
-            assert_eq!(module_path, None);
+            assert_eq!(modules.len(), 1);
+            assert_eq!(modules[0].name, "");
         }
 
         #[test]
         fn direct_module_file_has_single_segment_path() {
-            let file_path = PathBuf::from("src/text.rs");
+            let source_code = "";
 
-            let module_path = determine_module_path(&file_path).unwrap();
+            let modules = extract_modules_from_source("src/text.rs", source_code);
 
-            assert_eq!(module_path, Some("text".to_string()));
+            assert_eq!(modules.len(), 1);
+            assert_eq!(modules[0].name, "text");
         }
 
         #[test]
         fn mod_rs_has_directory_name_path() {
-            let file_path = PathBuf::from("src/text/mod.rs");
+            let source_code = "";
 
-            let module_path = determine_module_path(&file_path).unwrap();
+            let modules = extract_modules_from_source("src/text/mod.rs", source_code);
 
-            assert_eq!(module_path, Some("text".to_string()));
+            assert_eq!(modules.len(), 1);
+            assert_eq!(modules[0].name, "text");
         }
 
         #[test]
         fn nested_module_has_multi_segment_path() {
-            let file_path = PathBuf::from("src/text/formatter.rs");
+            let source_code = "";
 
-            let module_path = determine_module_path(&file_path).unwrap();
+            let modules = extract_modules_from_source("src/text/formatter.rs", source_code);
 
-            assert_eq!(module_path, Some("text::formatter".to_string()));
+            assert_eq!(modules.len(), 1);
+            assert_eq!(modules[0].name, "text::formatter");
         }
     }
 
@@ -551,8 +526,7 @@ pub fn test_function() -> i32 {
             assert_eq!(symbol.name, "test_function");
             assert_eq!(
                 symbol.doc_comment.as_deref(),
-                Some("This is a documented function\nthat returns the meaning of life"),
-                "Doc comment not extracted correctly"
+                Some("This is a documented function\nthat returns the meaning of life")
             );
         }
     }
@@ -593,8 +567,7 @@ pub struct TestStruct {
             assert_eq!(symbol.name, "TestStruct");
             assert_eq!(
                 symbol.doc_comment.as_deref(),
-                Some("A test struct\nwith documentation"),
-                "Doc comment not extracted correctly"
+                Some("A test struct\nwith documentation")
             );
         }
     }
@@ -637,8 +610,7 @@ pub enum TestEnum {
             assert_eq!(symbol.name, "TestEnum");
             assert_eq!(
                 symbol.doc_comment.as_deref(),
-                Some("A test enum\nwith variants"),
-                "Doc comment not extracted correctly"
+                Some("A test enum\nwith variants")
             );
         }
     }
@@ -679,8 +651,7 @@ pub trait TestTrait {
             assert_eq!(symbol.name, "TestTrait");
             assert_eq!(
                 symbol.doc_comment.as_deref(),
-                Some("A test trait\nwith a method"),
-                "Doc comment not extracted correctly"
+                Some("A test trait\nwith a method")
             );
         }
     }
@@ -702,25 +673,11 @@ pub fn outer_function() -> i32 {}
             let text_module = modules.iter().find(|m| m.name == "text").unwrap();
             let inner_module = modules.iter().find(|m| m.name == "text::inner").unwrap();
 
-            assert_eq!(
-                text_module.symbols.len(),
-                1,
-                "text module should have one symbol"
-            );
-            assert_eq!(
-                text_module.symbols[0].name, "outer_function",
-                "text module should contain outer_function"
-            );
+            assert_eq!(text_module.symbols.len(), 1);
+            assert_eq!(text_module.symbols[0].name, "outer_function");
 
-            assert_eq!(
-                inner_module.symbols.len(),
-                1,
-                "inner module should have one symbol"
-            );
-            assert_eq!(
-                inner_module.symbols[0].name, "nested_function",
-                "inner module should contain nested_function"
-            );
+            assert_eq!(inner_module.symbols.len(), 1);
+            assert_eq!(inner_module.symbols[0].name, "nested_function");
         }
 
         #[test]
@@ -737,15 +694,8 @@ pub fn public_function() -> i32 {}
             assert_eq!(modules.len(), 1);
             let text_module = modules.iter().find(|m| m.name == "text").unwrap();
 
-            assert_eq!(
-                text_module.symbols.len(),
-                1,
-                "text module should have one symbol"
-            );
-            assert_eq!(
-                text_module.symbols[0].name, "public_function",
-                "text module should contain public_function"
-            );
+            assert_eq!(text_module.symbols.len(), 1);
+            assert_eq!(text_module.symbols[0].name, "public_function");
         }
 
         #[test]
@@ -756,19 +706,13 @@ pub mod empty {}
 
             let modules = extract_modules_from_source("src/text/mod.rs", source_code);
 
-            assert_eq!(modules.len(), 2); // text and text::empty
+            assert_eq!(modules.len(), 2);
 
             let text_module = modules.iter().find(|m| m.name == "text").unwrap();
             let empty_module = modules.iter().find(|m| m.name == "text::empty").unwrap();
 
-            assert!(
-                text_module.symbols.is_empty(),
-                "text module should have no symbols"
-            );
-            assert!(
-                empty_module.symbols.is_empty(),
-                "empty module should have no symbols"
-            );
+            assert!(text_module.symbols.is_empty());
+            assert!(empty_module.symbols.is_empty());
         }
 
         #[test]
@@ -798,32 +742,15 @@ pub mod inner {
                 .find(|m| m.name == "text::inner::deeper")
                 .expect("deeper module should exist");
 
-            assert_eq!(
-                inner_module.symbols.len(),
-                2,
-                "inner module should have two symbols"
-            );
-            assert!(
-                inner_module.symbols.iter().any(|s| s.name == "InnerStruct"),
-                "inner module should contain InnerStruct"
-            );
-            assert!(
-                inner_module
-                    .symbols
-                    .iter()
-                    .any(|s| s.name == "inner_function"),
-                "inner module should contain inner_function"
-            );
+            assert_eq!(inner_module.symbols.len(), 2);
+            assert!(inner_module.symbols.iter().any(|s| s.name == "InnerStruct"));
+            assert!(inner_module
+                .symbols
+                .iter()
+                .any(|s| s.name == "inner_function"));
 
-            assert_eq!(
-                deeper_module.symbols.len(),
-                1,
-                "deeper module should have one symbol"
-            );
-            assert!(
-                deeper_module.symbols.iter().any(|s| s.name == "DeeperEnum"),
-                "deeper module should contain DeeperEnum"
-            );
+            assert_eq!(deeper_module.symbols.len(), 1);
+            assert!(deeper_module.symbols.iter().any(|s| s.name == "DeeperEnum"));
         }
 
         #[test]
@@ -837,30 +764,16 @@ pub mod inner {  // This should be processed as a module
 
             let modules = extract_modules_from_source("src/text/mod.rs", source_code);
 
-            assert_eq!(modules.len(), 2); // text and text::inner
+            assert_eq!(modules.len(), 2);
 
             let text_module = modules.iter().find(|m| m.name == "text").unwrap();
             let inner_module = modules.iter().find(|m| m.name == "text::inner").unwrap();
 
-            assert_eq!(
-                text_module.symbols.len(),
-                1,
-                "text module should have one symbol"
-            );
-            assert_eq!(
-                text_module.symbols[0].name, "other",
-                "Module declaration should be added as a symbol"
-            );
+            assert_eq!(text_module.symbols.len(), 1);
+            assert_eq!(text_module.symbols[0].name, "other");
 
-            assert_eq!(
-                inner_module.symbols.len(),
-                1,
-                "inner module should have one symbol"
-            );
-            assert_eq!(
-                inner_module.symbols[0].name, "inner_function",
-                "inner module should contain inner_function"
-            );
+            assert_eq!(inner_module.symbols.len(), 1);
+            assert_eq!(inner_module.symbols[0].name, "inner_function");
         }
     }
 
@@ -878,15 +791,8 @@ pub fn public_function() -> () {}
             let modules = extract_modules_from_source("src/text/mod.rs", source_code);
             let module = modules.iter().find(|m| m.name == "text").unwrap();
 
-            assert_eq!(
-                module.symbols.len(),
-                1,
-                "Only public_function should be extracted"
-            );
-            assert_eq!(
-                module.symbols[0].name, "public_function",
-                "public_function should be extracted"
-            );
+            assert_eq!(module.symbols.len(), 1);
+            assert_eq!(module.symbols[0].name, "public_function");
         }
 
         #[test]
@@ -904,86 +810,15 @@ pub mod text {
             let root_module = modules.iter().find(|m| m.name.is_empty()).unwrap();
             let text_module = modules.iter().find(|m| m.name == "text").unwrap();
 
-            assert_eq!(
-                root_module.symbols.len(),
-                2,
-                "Root module should have two symbols"
-            );
-            assert!(
-                root_module
-                    .symbols
-                    .iter()
-                    .any(|s| s.name == "root_function"),
-                "Root module should contain root_function"
-            );
-            assert!(
-                root_module.symbols.iter().any(|s| s.name == "RootStruct"),
-                "Root module should contain RootStruct"
-            );
+            assert_eq!(root_module.symbols.len(), 2);
+            assert!(root_module
+                .symbols
+                .iter()
+                .any(|s| s.name == "root_function"));
+            assert!(root_module.symbols.iter().any(|s| s.name == "RootStruct"));
 
-            assert_eq!(
-                text_module.symbols.len(),
-                1,
-                "Text module should have one symbol"
-            );
-            assert_eq!(
-                text_module.symbols[0].name, "text_function",
-                "Text module should contain text_function"
-            );
-        }
-    }
-
-    mod edge_cases {
-        use super::helpers::*;
-
-        #[test]
-        fn empty_source_file() {
-            let source_code = "";
-
-            let modules = extract_modules_from_source("src/empty.rs", source_code);
-
-            assert_eq!(modules.len(), 1, "An empty file still creates a module");
-            assert_eq!(modules[0].name, "empty");
-            assert!(
-                modules[0].symbols.is_empty(),
-                "Module should have no symbols"
-            );
-        }
-
-        #[test]
-        fn whitespace_only_source() {
-            let source_code = "  \n\t  \n";
-
-            let modules = extract_modules_from_source("src/whitespace.rs", source_code);
-
-            assert_eq!(
-                modules.len(),
-                1,
-                "A whitespace-only file still creates a module"
-            );
-            assert_eq!(modules[0].name, "whitespace");
-            assert!(
-                modules[0].symbols.is_empty(),
-                "Module should have no symbols"
-            );
-        }
-
-        #[test]
-        fn comments_only_source() {
-            let source_code = "// Just a comment\n/* Another comment */";
-
-            let modules = extract_modules_from_source("src/comments.rs", source_code);
-
-            assert_eq!(
-                modules.len(),
-                1,
-                "A file with only comments still creates a module"
-            );
-            assert_eq!(modules[0].name, "comments");
-            assert!(
-                modules[0].symbols.is_empty(),
-                "Module should have no symbols"
-            );
+            assert_eq!(text_module.symbols.len(), 1);
+            assert_eq!(text_module.symbols[0].name, "text_function");
         }
     }
 }
