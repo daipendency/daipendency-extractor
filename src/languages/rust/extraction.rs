@@ -27,17 +27,9 @@ fn extract_modules_from_module(
         match child.kind() {
             "function_item" | "struct_item" | "enum_item" | "trait_item" | "macro_definition" => {
                 let name = extract_name(&child, source_code)?;
-                let mut source_code_with_docs = String::new();
-
-                if let Some(doc_comment) = extract_outer_doc_comments(&child, source_code)? {
-                    source_code_with_docs.push_str(&doc_comment);
-                }
-
-                source_code_with_docs.push_str(&get_symbol_source_code(child, source_code)?);
-
                 symbols.push(Symbol {
                     name,
-                    source_code: source_code_with_docs,
+                    source_code: get_symbol_source_code(child, source_code)?,
                 });
             }
             "mod_item" => {
@@ -213,23 +205,58 @@ fn extract_name(node: &Node, source_code: &str) -> Result<String, LaibraryError>
 }
 
 fn get_symbol_source_code(node: Node, source_code: &str) -> Result<String, LaibraryError> {
-    match node.kind() {
-        "function_item" => {
+    let mut source_code_with_docs = String::new();
+
+    if let Some(doc_comment) = extract_outer_doc_comments(&node, source_code)? {
+        source_code_with_docs.push_str(&doc_comment);
+    }
+
+    let symbol_source = match node.kind() {
+        "function_item" | "function_signature_item" => {
             let mut cursor = node.walk();
             let block_node = node
                 .children(&mut cursor)
                 .find(|n| n.kind() == "block")
                 .unwrap();
-            Ok(format!(
+            format!(
                 "{};",
                 &source_code[node.start_byte()..block_node.start_byte()].trim_end()
-            ))
+            )
+        }
+        "trait_item" => {
+            let mut cursor = node.walk();
+            let declaration_list = node
+                .children(&mut cursor)
+                .find(|n| n.kind() == "declaration_list")
+                .unwrap();
+
+            let mut trait_source = String::new();
+            trait_source.push_str(&source_code[node.start_byte()..declaration_list.start_byte()]);
+            trait_source.push_str(" {\n");
+
+            let mut method_cursor = declaration_list.walk();
+            for method in declaration_list.children(&mut method_cursor) {
+                if method.kind() == "function_item" {
+                    let method_source = get_symbol_source_code(method, source_code)?;
+                    for line in method_source.lines() {
+                        trait_source.push_str("    ");
+                        trait_source.push_str(line);
+                        trait_source.push('\n');
+                    }
+                }
+            }
+
+            trait_source.push('}');
+            trait_source
         }
         _ => node
             .utf8_text(source_code.as_bytes())
             .map(|s| s.to_string())
-            .map_err(|e| LaibraryError::Parse(e.to_string())),
-    }
+            .map_err(|e| LaibraryError::Parse(e.to_string()))?,
+    };
+
+    source_code_with_docs.push_str(&symbol_source);
+    Ok(source_code_with_docs)
 }
 
 #[cfg(test)]
@@ -289,23 +316,48 @@ mod tests {
         assert!(modules[0].symbols.is_empty());
     }
 
-    #[test]
-    fn function_body_is_omitted() {
-        let source_code = r#"
+    mod function_body {
+        use assertables::assert_contains;
+
+        use super::helpers::*;
+
+        #[test]
+        fn function_declaration() {
+            let source_code = r#"
 pub fn test_function() -> i32 {
     return 42;
 }
 "#;
 
-        let modules = extract_modules_from_source("src/lib.rs", source_code);
+            let modules = extract_modules_from_source("src/lib.rs", source_code);
 
-        assert_eq!(modules.len(), 1);
-        let module = &modules[0];
-        assert_eq!(module.symbols.len(), 1);
-        assert_eq!(
-            module.symbols[0].source_code,
-            "pub fn test_function() -> i32;"
-        );
+            assert_eq!(modules.len(), 1);
+            let module = &modules[0];
+            assert_eq!(module.symbols.len(), 1);
+            assert_eq!(
+                module.symbols[0].source_code,
+                "pub fn test_function() -> i32;"
+            );
+        }
+
+        #[test]
+        fn trait_method_declaration() {
+            let source_code = r#"
+pub trait TestTrait {
+    pub fn test_method(&self) -> i32 {
+        42
+    }
+}
+"#;
+
+            let modules = extract_modules_from_source("src/lib.rs", source_code);
+
+            assert_eq!(modules.len(), 1);
+            let module = &modules[0];
+            assert_eq!(module.symbols.len(), 1);
+            let symbol = module.get_symbol("TestTrait").unwrap();
+            assert_contains!(symbol.source_code, "pub fn test_method(&self) -> i32;");
+        }
     }
 
     mod visibility {
@@ -357,7 +409,7 @@ pub(super) fn super_function() {}
 
     mod outer_doc_comments {
         use super::helpers::*;
-        use assertables::assert_starts_with;
+        use assertables::{assert_contains, assert_starts_with};
 
         #[test]
         fn no_doc_comments() {
@@ -529,6 +581,24 @@ pub trait TestTrait {
 
             let symbol = extract_symbol(source_code, "TestTrait");
             assert_starts_with!(symbol.source_code, "/// A documented trait\n");
+        }
+
+        #[test]
+        fn trait_method_doc_comments() {
+            let source_code = r#"
+pub trait TestTrait {
+    /// A documented method
+    pub fn test_method(&self) -> i32 {
+        42
+    }
+}
+"#;
+
+            let symbol = extract_symbol(source_code, "TestTrait");
+            assert_contains!(
+                symbol.source_code,
+                "/// A documented method\n    pub fn test_method(&self) -> i32;"
+            );
         }
     }
 
