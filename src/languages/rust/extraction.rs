@@ -444,6 +444,63 @@ pub struct Test {}
                 Some("This block comment\nshould be returned")
             );
         }
+
+        #[test]
+        fn function_with_doc_comment() {
+            let source_code = r#"
+/// A documented function
+pub fn test_function() -> i32 {
+    42
+}
+"#;
+
+            let symbol = extract_symbol(source_code, "test_function");
+
+            assert_eq!(symbol.doc_comment.as_deref(), Some("A documented function"));
+        }
+
+        #[test]
+        fn struct_with_doc_comment() {
+            let source_code = r#"
+/// A documented struct
+pub struct TestStruct {
+    field: i32
+}
+"#;
+
+            let symbol = extract_symbol(source_code, "TestStruct");
+
+            assert_eq!(symbol.doc_comment.as_deref(), Some("A documented struct"));
+        }
+
+        #[test]
+        fn enum_with_doc_comment() {
+            let source_code = r#"
+/// A documented enum
+pub enum TestEnum {
+    A,
+    B
+}
+"#;
+
+            let symbol = extract_symbol(source_code, "TestEnum");
+
+            assert_eq!(symbol.doc_comment.as_deref(), Some("A documented enum"));
+        }
+
+        #[test]
+        fn trait_with_doc_comment() {
+            let source_code = r#"
+/// A documented trait
+pub trait TestTrait {
+    fn test_method(&self);
+}
+"#;
+
+            let symbol = extract_symbol(source_code, "TestTrait");
+
+            assert_eq!(symbol.doc_comment.as_deref(), Some("A documented trait"));
+        }
     }
 
     mod module_path {
@@ -487,172 +544,6 @@ pub struct Test {}
 
             assert_eq!(modules.len(), 1);
             assert_eq!(modules[0].name, "text::formatter");
-        }
-    }
-
-    mod functions {
-        use super::helpers::*;
-
-        #[test]
-        fn function_without_doc_comment() {
-            let source_code = r#"
-pub fn test_function() -> i32 {
-    42
-}
-"#;
-
-            let symbol = extract_symbol(source_code, "test_function");
-
-            assert_eq!(symbol.name, "test_function");
-            assert_eq!(
-                symbol.source_code.trim(),
-                "pub fn test_function() -> i32 {\n    42\n}"
-            );
-            assert_eq!(symbol.doc_comment, None);
-        }
-
-        #[test]
-        fn function_with_doc_comment() {
-            let source_code = r#"
-/// This is a documented function
-/// that returns the meaning of life
-pub fn test_function() -> i32 {
-    42
-}
-"#;
-
-            let symbol = extract_symbol(source_code, "test_function");
-
-            assert_eq!(symbol.name, "test_function");
-            assert_eq!(
-                symbol.doc_comment.as_deref(),
-                Some("This is a documented function\nthat returns the meaning of life")
-            );
-        }
-    }
-
-    mod structs {
-        use super::helpers::*;
-
-        #[test]
-        fn struct_without_doc_comment() {
-            let source_code = r#"
-pub struct TestStruct {
-    field: i32
-}
-"#;
-
-            let symbol = extract_symbol(source_code, "TestStruct");
-
-            assert_eq!(symbol.name, "TestStruct");
-            assert_eq!(
-                symbol.source_code.trim(),
-                "pub struct TestStruct {\n    field: i32\n}"
-            );
-            assert_eq!(symbol.doc_comment, None);
-        }
-
-        #[test]
-        fn struct_with_doc_comment() {
-            let source_code = r#"
-/// A test struct
-/// with documentation
-pub struct TestStruct {
-    field: i32
-}
-"#;
-
-            let symbol = extract_symbol(source_code, "TestStruct");
-
-            assert_eq!(symbol.name, "TestStruct");
-            assert_eq!(
-                symbol.doc_comment.as_deref(),
-                Some("A test struct\nwith documentation")
-            );
-        }
-    }
-
-    mod enums {
-        use super::helpers::*;
-
-        #[test]
-        fn enum_without_doc_comment() {
-            let source_code = r#"
-pub enum TestEnum {
-    A,
-    B
-}
-"#;
-
-            let symbol = extract_symbol(source_code, "TestEnum");
-
-            assert_eq!(symbol.name, "TestEnum");
-            assert_eq!(
-                symbol.source_code.trim(),
-                "pub enum TestEnum {\n    A,\n    B\n}"
-            );
-            assert_eq!(symbol.doc_comment, None);
-        }
-
-        #[test]
-        fn enum_with_doc_comment() {
-            let source_code = r#"
-/// A test enum
-/// with variants
-pub enum TestEnum {
-    A,
-    B
-}
-"#;
-
-            let symbol = extract_symbol(source_code, "TestEnum");
-
-            assert_eq!(symbol.name, "TestEnum");
-            assert_eq!(
-                symbol.doc_comment.as_deref(),
-                Some("A test enum\nwith variants")
-            );
-        }
-    }
-
-    mod traits {
-        use super::helpers::*;
-
-        #[test]
-        fn trait_without_doc_comment() {
-            let source_code = r#"
-pub trait TestTrait {
-    fn test_method(&self);
-}
-"#;
-
-            let symbol = extract_symbol(source_code, "TestTrait");
-
-            assert_eq!(symbol.name, "TestTrait");
-            assert_eq!(
-                symbol.source_code.trim(),
-                "pub trait TestTrait {\n    fn test_method(&self);\n}"
-            );
-            assert_eq!(symbol.doc_comment, None);
-        }
-
-        #[test]
-        fn trait_with_doc_comment() {
-            let source_code = r#"
-/// A test trait
-/// with a method
-pub trait TestTrait {
-    fn test_method(&self);
-}
-"#;
-
-            let symbol = extract_symbol(source_code, "TestTrait");
-
-            assert_eq!(symbol.name, "TestTrait");
-            assert_eq!(
-                symbol.doc_comment.as_deref(),
-                Some("A test trait\nwith a method")
-            );
         }
     }
 
