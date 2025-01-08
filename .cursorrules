@@ -19,7 +19,6 @@
 - Run the tests after making changes to the codebase.
 - Run the tests with `RUST_BACKTRACE=full`.
 - Prefer specialised assertions (e.g. equality checks) over simple boolean assertions.
-- When writing a boolean assertion, add a helpful yet succinct assertion message that explains the failure so that we don't have to add temporary debug statements when the assertion fails.
 - When a test fails, think critically about the cause of the failure, and consider the requirements. The issue may be the test or the unit under test.
 
 # Troubleshooting
