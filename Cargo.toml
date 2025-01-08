@@ -13,4 +13,5 @@ tree-sitter-rust = "0.23.2"
 walkdir = "2.4.0"
 
 [dev-dependencies]
+assertables = "9.5.0"
 tempfile = "3.10.0"

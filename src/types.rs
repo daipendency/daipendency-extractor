@@ -24,7 +24,6 @@ pub struct Namespace {
 pub struct Symbol {
     pub name: String,
     pub source_code: String,
-    pub doc_comment: Option<String>,
 }
 
 impl Namespace {
@@ -42,7 +41,6 @@ mod tests {
         let symbol = Symbol {
             name: "test_symbol".to_string(),
             source_code: "fn test() {}".to_string(),
-            doc_comment: None,
         };
         let namespace = Namespace {
             name: "test_namespace".to_string(),

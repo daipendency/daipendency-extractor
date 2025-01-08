@@ -27,23 +27,27 @@ fn extract_modules_from_module(
         match child.kind() {
             "function_item" | "struct_item" | "enum_item" | "trait_item" | "macro_definition" => {
                 let name = extract_name(&child, source_code)?;
-                let doc_comment = extract_outer_doc_comments(&child, source_code)?;
-                let source_code = child
-                    .utf8_text(source_code.as_bytes())
-                    .map_err(|e| LaibraryError::Parse(e.to_string()))?
-                    .to_string();
+                let mut source_code_with_docs = String::new();
+
+                if let Some(doc_comment) = extract_outer_doc_comments(&child, source_code)? {
+                    source_code_with_docs.push_str(&doc_comment);
+                }
+
+                source_code_with_docs.push_str(
+                    child
+                        .utf8_text(source_code.as_bytes())
+                        .map_err(|e| LaibraryError::Parse(e.to_string()))?,
+                );
 
                 symbols.push(Symbol {
                     name,
-                    source_code,
-                    doc_comment,
+                    source_code: source_code_with_docs,
                 });
             }
             "mod_item" => {
                 let mod_name = extract_name(&child, source_code)?;
                 let new_module_path = format!("{}::{}", module_path, mod_name);
 
-                // Look for the declaration_list node
                 let mut cursor = child.walk();
                 let children: Vec<_> = child.children(&mut cursor).collect();
                 if let Some(declaration_node) = children
@@ -64,7 +68,6 @@ fn extract_modules_from_module(
                             .utf8_text(source_code.as_bytes())
                             .map_err(|e| LaibraryError::Parse(e.to_string()))?
                             .to_string(),
-                        doc_comment: None,
                     });
                 }
             }
@@ -92,7 +95,6 @@ fn determine_module_path(file_path: &Path) -> Result<Option<String>, LaibraryErr
 
     let mut path_components = Vec::new();
 
-    // Get all path components after "src"
     let mut found_src = false;
     for component in file_path.parent().unwrap_or(Path::new("")).components() {
         if let std::path::Component::Normal(name) = component {
@@ -139,27 +141,19 @@ fn extract_outer_doc_comments(
 
         match sibling.kind() {
             "block_comment" => {
-                if let Some(doc_node) = children.iter().find(|child| child.kind() == "doc_comment")
-                {
-                    let text = doc_node
+                if children.iter().any(|child| child.kind() == "doc_comment") {
+                    let text = sibling
                         .utf8_text(source_code.as_bytes())
                         .map_err(|e| LaibraryError::Parse(e.to_string()))?;
-                    let text = text
-                        .lines()
-                        .map(|line| line.trim_start_matches(" *").trim_start_matches(" "))
-                        .collect::<Vec<_>>()
-                        .join("\n")
-                        .trim_end()
-                        .to_string();
-                    return Ok(Some(text));
+                    Ok(Some(text.to_string() + "\n"))
+                } else {
+                    Ok(None)
                 }
-                return Ok(None);
             }
             "line_comment" => {
                 let mut current = Some(sibling);
                 let mut doc_comments = Vec::new();
 
-                // Collect all consecutive line comments with outer doc markers
                 while let Some(comment) = current {
                     let mut cursor = comment.walk();
                     let children: Vec<_> = comment.children(&mut cursor).collect();
@@ -167,16 +161,14 @@ fn extract_outer_doc_comments(
                     let has_outer_doc = children
                         .iter()
                         .any(|c| c.kind() == "outer_doc_comment_marker");
+                    let has_doc_comment =
+                        children.iter().any(|child| child.kind() == "doc_comment");
 
-                    if has_outer_doc {
-                        if let Some(doc_node) =
-                            children.iter().find(|child| child.kind() == "doc_comment")
-                        {
-                            let comment_text = doc_node
-                                .utf8_text(source_code.as_bytes())
-                                .map_err(|e| LaibraryError::Parse(e.to_string()))?;
-                            doc_comments.push(comment_text.to_string());
-                        }
+                    if has_outer_doc && has_doc_comment {
+                        let comment_text = comment
+                            .utf8_text(source_code.as_bytes())
+                            .map_err(|e| LaibraryError::Parse(e.to_string()))?;
+                        doc_comments.push(comment_text.to_string());
                     } else {
                         break;
                     }
@@ -193,21 +185,15 @@ fn extract_outer_doc_comments(
                     return Ok(None);
                 }
 
-                let result = doc_comments
-                    .iter()
-                    .rev()
-                    .map(|s| s.trim_start_matches(' ').trim_end_matches('\n'))
-                    .collect::<Vec<_>>()
-                    .join("\n");
-                return Ok(Some(result));
+                Ok(Some(
+                    doc_comments.into_iter().rev().collect::<Vec<_>>().join(""),
+                ))
             }
-            _ => {
-                return Ok(None);
-            }
+            _ => Ok(None),
         }
+    } else {
+        Ok(None)
     }
-
-    Ok(None)
 }
 
 fn is_public(node: &Node) -> bool {
@@ -336,6 +322,7 @@ pub(super) fn super_function() {}
 
     mod outer_doc_comments {
         use super::helpers::*;
+        use assertables::assert_starts_with;
 
         #[test]
         fn no_doc_comments() {
@@ -344,8 +331,7 @@ pub struct Test {}
 "#;
 
             let symbol = extract_symbol(source_code, "Test");
-
-            assert_eq!(symbol.doc_comment, None);
+            assert_eq!(symbol.source_code, "pub struct Test {}");
         }
 
         #[test]
@@ -356,8 +342,10 @@ pub struct Test {}
 "#;
 
             let symbol = extract_symbol(source_code, "Test");
-
-            assert_eq!(symbol.doc_comment.as_deref(), Some("A documented item"));
+            assert_eq!(
+                symbol.source_code,
+                "/// A documented item\npub struct Test {}"
+            );
         }
 
         #[test]
@@ -369,11 +357,7 @@ pub struct Test {}
 "#;
 
             let symbol = extract_symbol(source_code, "Test");
-
-            assert_eq!(
-                symbol.doc_comment.as_deref(),
-                Some("First line\nSecond line")
-            );
+            assert_starts_with!(symbol.source_code, "/// First line\n/// Second line\n");
         }
 
         #[test]
@@ -385,8 +369,7 @@ pub struct Test {}
 "#;
 
             let symbol = extract_symbol(source_code, "Test");
-
-            assert_eq!(symbol.doc_comment, None);
+            assert_starts_with!(symbol.source_code, "pub struct Test");
         }
 
         #[test]
@@ -398,8 +381,7 @@ pub struct Test {}
 "#;
 
             let symbol = extract_symbol(source_code, "Test");
-
-            assert_eq!(symbol.doc_comment, None);
+            assert_starts_with!(symbol.source_code, "pub struct Test");
         }
 
         #[test]
@@ -413,11 +395,7 @@ pub struct Test {}
 "#;
 
             let symbol = extract_symbol(source_code, "Test");
-
-            assert_eq!(
-                symbol.doc_comment.as_deref(),
-                Some("A block doc comment\nwith multiple lines\nand some indentation")
-            );
+            assert_starts_with!(symbol.source_code, "/** A block doc comment\n * with multiple lines\n * and some indentation\n */\npub struct Test");
         }
 
         #[test]
@@ -431,11 +409,7 @@ pub struct Test {}
 "#;
 
             let symbol = extract_symbol(source_code, "Test");
-
-            assert_eq!(
-                symbol.doc_comment.as_deref(),
-                Some("This is the struct's doc")
-            );
+            assert_starts_with!(symbol.source_code, "/// This is the struct's doc\n");
         }
 
         #[test]
@@ -449,8 +423,7 @@ pub struct SecondStruct {}
 "#;
 
             let symbol = extract_symbol(source_code, "SecondStruct");
-
-            assert_eq!(symbol.doc_comment.as_deref(), Some("Second struct's doc"));
+            assert_starts_with!(symbol.source_code, "/// Second struct's doc\n");
         }
 
         #[test]
@@ -464,10 +437,9 @@ pub struct Test {}
 "#;
 
             let symbol = extract_symbol(source_code, "Test");
-
-            assert_eq!(
-                symbol.doc_comment.as_deref(),
-                Some("This block comment\nshould be returned")
+            assert_starts_with!(
+                symbol.source_code,
+                "/** This block comment\n * should be returned\n */\n"
             );
         }
 
@@ -481,8 +453,7 @@ pub fn test_function() -> i32 {
 "#;
 
             let symbol = extract_symbol(source_code, "test_function");
-
-            assert_eq!(symbol.doc_comment.as_deref(), Some("A documented function"));
+            assert_starts_with!(symbol.source_code, "/// A documented function\n");
         }
 
         #[test]
@@ -495,8 +466,7 @@ pub struct TestStruct {
 "#;
 
             let symbol = extract_symbol(source_code, "TestStruct");
-
-            assert_eq!(symbol.doc_comment.as_deref(), Some("A documented struct"));
+            assert_starts_with!(symbol.source_code, "/// A documented struct\n");
         }
 
         #[test]
@@ -510,8 +480,7 @@ pub enum TestEnum {
 "#;
 
             let symbol = extract_symbol(source_code, "TestEnum");
-
-            assert_eq!(symbol.doc_comment.as_deref(), Some("A documented enum"));
+            assert_starts_with!(symbol.source_code, "/// A documented enum\n");
         }
 
         #[test]
@@ -524,8 +493,7 @@ pub trait TestTrait {
 "#;
 
             let symbol = extract_symbol(source_code, "TestTrait");
-
-            assert_eq!(symbol.doc_comment.as_deref(), Some("A documented trait"));
+            assert_starts_with!(symbol.source_code, "/// A documented trait\n");
         }
     }
 

@@ -75,13 +75,12 @@ mod tests {
         }
     }
 
-    fn create_namespace(name: &str, source_code: &str, doc_comment: Option<&str>) -> Namespace {
+    fn create_namespace(name: &str, source_code: &str, _doc_comment: Option<&str>) -> Namespace {
         Namespace {
             name: name.to_string(),
             symbols: vec![Symbol {
                 name: name.to_string(),
                 source_code: source_code.to_string(),
-                doc_comment: doc_comment.map(String::from),
             }],
         }
     }
