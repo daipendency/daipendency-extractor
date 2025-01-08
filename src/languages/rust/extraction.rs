@@ -3,7 +3,7 @@ use crate::types::{Namespace, SourceFile, Symbol};
 use std::path::Path;
 use tree_sitter::Node;
 
-pub fn extract_modules(sources: &[SourceFile]) -> Result<Vec<Namespace>, LaibraryError> {
+pub fn extract_modules_from_files(sources: &[SourceFile]) -> Result<Vec<Namespace>, LaibraryError> {
     let mut modules = Vec::new();
 
     for source in sources {
@@ -15,81 +15,13 @@ pub fn extract_modules(sources: &[SourceFile]) -> Result<Vec<Namespace>, Laibrar
 }
 
 fn extract_modules_from_file(source: &SourceFile) -> Result<Vec<Namespace>, LaibraryError> {
-    let mut modules = Vec::new();
-    let mut symbols = Vec::new();
-    let mut cursor = source.tree.root_node().walk();
-
     let module_path = determine_module_path(&source.path)?;
     let module_path = module_path.unwrap_or_default();
 
-    for child in source.tree.root_node().children(&mut cursor) {
-        if !is_public(&child, &source.content) {
-            continue;
-        }
-
-        match child.kind() {
-            "function_item" | "struct_item" | "enum_item" | "trait_item" | "macro_definition" => {
-                if let Some(name) = extract_name(&child, &source.content) {
-                    let doc_comment = extract_outer_doc_comments(&child, &source.content)?;
-                    let source_code = child
-                        .utf8_text(source.content.as_bytes())
-                        .map_err(|e| LaibraryError::Parse(e.to_string()))?
-                        .to_string();
-
-                    symbols.push(Symbol {
-                        name,
-                        source_code,
-                        doc_comment,
-                    });
-                }
-            }
-            "mod_item" => {
-                let mod_name = extract_name(&child, &source.content)
-                    .ok_or_else(|| LaibraryError::Parse("Invalid module name".to_string()))?;
-                let new_module_path = if module_path.is_empty() {
-                    mod_name.clone()
-                } else {
-                    format!("{}::{}", module_path, mod_name)
-                };
-
-                // Look for the declaration_list node
-                let mut cursor = child.walk();
-                let children: Vec<_> = child.children(&mut cursor).collect();
-                if let Some(declaration_node) = children
-                    .iter()
-                    .find(|mod_child| mod_child.kind() == "declaration_list")
-                {
-                    let mut extracted = extract_modules_from_module_with_path(
-                        *declaration_node,
-                        &source.content,
-                        new_module_path,
-                    )?;
-                    modules.append(&mut extracted);
-                } else {
-                    // Add module declaration as a symbol
-                    symbols.push(Symbol {
-                        name: mod_name,
-                        source_code: child
-                            .utf8_text(source.content.as_bytes())
-                            .map_err(|e| LaibraryError::Parse(e.to_string()))?
-                            .to_string(),
-                        doc_comment: None,
-                    });
-                }
-            }
-            _ => {}
-        }
-    }
-
-    modules.push(Namespace {
-        name: module_path,
-        symbols,
-    });
-
-    Ok(modules)
+    extract_modules_from_module(source.tree.root_node(), &source.content, module_path)
 }
 
-fn extract_modules_from_module_with_path(
+fn extract_modules_from_module(
     module_node: Node,
     source_code: &str,
     module_path: String,
@@ -131,7 +63,7 @@ fn extract_modules_from_module_with_path(
                     .iter()
                     .find(|mod_child| mod_child.kind() == "declaration_list")
                 {
-                    let mut extracted = extract_modules_from_module_with_path(
+                    let mut extracted = extract_modules_from_module(
                         *declaration_node,
                         source_code,
                         new_module_path,
@@ -351,7 +283,7 @@ mod tests {
         pub fn extract_symbol(source_code: &str, symbol_name: &str) -> Symbol {
             let source = create_source_file("src/lib.rs", source_code);
             let sources = vec![source];
-            let modules = extract_modules(&sources).unwrap();
+            let modules = extract_modules_from_files(&sources).unwrap();
             let root_module = get_namespace(&modules, "").unwrap();
             root_module.get_symbol(symbol_name).unwrap().clone()
         }
@@ -359,7 +291,7 @@ mod tests {
         pub fn extract_modules_from_source(path: &str, content: &str) -> Vec<Namespace> {
             let source = create_source_file(path, content);
             let sources = vec![source];
-            extract_modules(&sources).unwrap()
+            extract_modules_from_files(&sources).unwrap()
         }
     }
 

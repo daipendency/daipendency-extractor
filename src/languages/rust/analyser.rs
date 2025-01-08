@@ -35,7 +35,7 @@ impl Analyser for RustAnalyser {
     }
 
     fn extract_public_api(&self, sources: &[SourceFile]) -> Result<Vec<Namespace>, LaibraryError> {
-        extraction::extract_modules(sources)
+        extraction::extract_modules_from_files(sources)
     }
 
     fn format_namespace(&self, module: &Namespace) -> Result<String, LaibraryError> {
