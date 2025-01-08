@@ -33,11 +33,7 @@ fn extract_modules_from_module(
                     source_code_with_docs.push_str(&doc_comment);
                 }
 
-                source_code_with_docs.push_str(
-                    child
-                        .utf8_text(source_code.as_bytes())
-                        .map_err(|e| LaibraryError::Parse(e.to_string()))?,
-                );
+                source_code_with_docs.push_str(&get_symbol_source_code(child, source_code)?);
 
                 symbols.push(Symbol {
                     name,
@@ -216,6 +212,26 @@ fn extract_name(node: &Node, source_code: &str) -> Result<String, LaibraryError>
         .ok_or_else(|| LaibraryError::Parse("Failed to extract name".to_string()))
 }
 
+fn get_symbol_source_code(node: Node, source_code: &str) -> Result<String, LaibraryError> {
+    match node.kind() {
+        "function_item" => {
+            let mut cursor = node.walk();
+            let block_node = node
+                .children(&mut cursor)
+                .find(|n| n.kind() == "block")
+                .unwrap();
+            Ok(format!(
+                "{};",
+                &source_code[node.start_byte()..block_node.start_byte()].trim_end()
+            ))
+        }
+        _ => node
+            .utf8_text(source_code.as_bytes())
+            .map(|s| s.to_string())
+            .map_err(|e| LaibraryError::Parse(e.to_string())),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -271,6 +287,25 @@ mod tests {
         assert_eq!(modules.len(), 1);
         assert_eq!(modules[0].name, "empty");
         assert!(modules[0].symbols.is_empty());
+    }
+
+    #[test]
+    fn function_body_is_omitted() {
+        let source_code = r#"
+pub fn test_function() -> i32 {
+    return 42;
+}
+"#;
+
+        let modules = extract_modules_from_source("src/lib.rs", source_code);
+
+        assert_eq!(modules.len(), 1);
+        let module = &modules[0];
+        assert_eq!(module.symbols.len(), 1);
+        assert_eq!(
+            module.symbols[0].source_code,
+            "pub fn test_function() -> i32;"
+        );
     }
 
     mod visibility {
