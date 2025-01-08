@@ -304,47 +304,51 @@ mod tests {
         assert!(modules[0].symbols.is_empty());
     }
 
-    #[test]
-    fn private_symbols() {
-        let source_code = r#"
+    mod visibility {
+        use super::helpers::*;
+
+        #[test]
+        fn private_symbols() {
+            let source_code = r#"
 fn private_function() {}
 pub fn public_function() -> () {}
 "#;
 
-        let modules = extract_modules_from_source("src/lib.rs", source_code);
+            let modules = extract_modules_from_source("src/lib.rs", source_code);
 
-        assert_eq!(modules.len(), 1);
-        let module = &modules[0];
-        assert_eq!(module.symbols.len(), 1);
-        assert_eq!(module.symbols[0].name, "public_function");
-    }
+            assert_eq!(modules.len(), 1);
+            let module = &modules[0];
+            assert_eq!(module.symbols.len(), 1);
+            assert_eq!(module.symbols[0].name, "public_function");
+        }
 
-    #[test]
-    fn crate_visible_symbols() {
-        let source_code = r#"
+        #[test]
+        fn crate_visible_symbols() {
+            let source_code = r#"
 pub(crate) fn crate_function() {}
 "#;
 
-        let modules = extract_modules_from_source("src/lib.rs", source_code);
+            let modules = extract_modules_from_source("src/lib.rs", source_code);
 
-        assert_eq!(modules.len(), 1);
-        let module = &modules[0];
-        assert_eq!(module.symbols.len(), 1);
-        assert_eq!(module.symbols[0].name, "crate_function");
-    }
+            assert_eq!(modules.len(), 1);
+            let module = &modules[0];
+            assert_eq!(module.symbols.len(), 1);
+            assert_eq!(module.symbols[0].name, "crate_function");
+        }
 
-    #[test]
-    fn super_visible_symbols() {
-        let source_code = r#"
+        #[test]
+        fn super_visible_symbols() {
+            let source_code = r#"
 pub(super) fn super_function() {}
 "#;
 
-        let modules = extract_modules_from_source("src/lib.rs", source_code);
+            let modules = extract_modules_from_source("src/lib.rs", source_code);
 
-        assert_eq!(modules.len(), 1);
-        let module = &modules[0];
-        assert_eq!(module.symbols.len(), 1);
-        assert_eq!(module.symbols[0].name, "super_function");
+            assert_eq!(modules.len(), 1);
+            let module = &modules[0];
+            assert_eq!(module.symbols.len(), 1);
+            assert_eq!(module.symbols[0].name, "super_function");
+        }
     }
 
     mod outer_doc_comments {
