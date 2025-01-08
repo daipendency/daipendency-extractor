@@ -3,18 +3,7 @@ use crate::types::{Namespace, SourceFile, Symbol};
 use std::path::Path;
 use tree_sitter::Node;
 
-pub fn extract_modules_from_files(sources: &[SourceFile]) -> Result<Vec<Namespace>, LaibraryError> {
-    let mut modules = Vec::new();
-
-    for source in sources {
-        let mut source_modules = extract_modules_from_file(source)?;
-        modules.append(&mut source_modules);
-    }
-
-    Ok(modules)
-}
-
-fn extract_modules_from_file(source: &SourceFile) -> Result<Vec<Namespace>, LaibraryError> {
+pub fn extract_modules_from_file(source: &SourceFile) -> Result<Vec<Namespace>, LaibraryError> {
     let module_path = determine_module_path(&source.path)?;
     let module_path = module_path.unwrap_or_default();
 
@@ -280,16 +269,14 @@ mod tests {
 
         pub fn extract_symbol(source_code: &str, symbol_name: &str) -> Symbol {
             let source = create_source_file("src/lib.rs", source_code);
-            let sources = vec![source];
-            let modules = extract_modules_from_files(&sources).unwrap();
+            let modules = extract_modules_from_file(&source).unwrap();
             let root_module = get_namespace(&modules, "").unwrap();
             root_module.get_symbol(symbol_name).unwrap().clone()
         }
 
         pub fn extract_modules_from_source(path: &str, content: &str) -> Vec<Namespace> {
             let source = create_source_file(path, content);
-            let sources = vec![source];
-            extract_modules_from_files(&sources).unwrap()
+            extract_modules_from_file(&source).unwrap()
         }
     }
 
