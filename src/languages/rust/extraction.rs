@@ -7,19 +7,89 @@ pub fn extract_modules(sources: &[SourceFile]) -> Result<Vec<Namespace>, Laibrar
     let mut modules = Vec::new();
 
     for source in sources {
-        let root_node = source.tree.root_node();
-        let module_path = determine_module_path(&source.path)?;
-        let module_path = module_path.unwrap_or_default();
-
-        let mut source_modules =
-            extract_modules_from_module(root_node, &source.content, module_path)?;
+        let mut source_modules = extract_modules_from_file(source)?;
         modules.append(&mut source_modules);
     }
 
     Ok(modules)
 }
 
-fn extract_modules_from_module(
+fn extract_modules_from_file(source: &SourceFile) -> Result<Vec<Namespace>, LaibraryError> {
+    let mut modules = Vec::new();
+    let mut symbols = Vec::new();
+    let mut cursor = source.tree.root_node().walk();
+
+    let module_path = determine_module_path(&source.path)?;
+    let module_path = module_path.unwrap_or_default();
+
+    for child in source.tree.root_node().children(&mut cursor) {
+        if !is_public(&child, &source.content) {
+            continue;
+        }
+
+        match child.kind() {
+            "function_item" | "struct_item" | "enum_item" | "trait_item" | "macro_definition" => {
+                if let Some(name) = extract_name(&child, &source.content) {
+                    let doc_comment = extract_outer_doc_comments(&child, &source.content)?;
+                    let source_code = child
+                        .utf8_text(source.content.as_bytes())
+                        .map_err(|e| LaibraryError::Parse(e.to_string()))?
+                        .to_string();
+
+                    symbols.push(Symbol {
+                        name,
+                        source_code,
+                        doc_comment,
+                    });
+                }
+            }
+            "mod_item" => {
+                let mod_name = extract_name(&child, &source.content)
+                    .ok_or_else(|| LaibraryError::Parse("Invalid module name".to_string()))?;
+                let new_module_path = if module_path.is_empty() {
+                    mod_name.clone()
+                } else {
+                    format!("{}::{}", module_path, mod_name)
+                };
+
+                // Look for the declaration_list node
+                let mut cursor = child.walk();
+                let children: Vec<_> = child.children(&mut cursor).collect();
+                if let Some(declaration_node) = children
+                    .iter()
+                    .find(|mod_child| mod_child.kind() == "declaration_list")
+                {
+                    let mut extracted = extract_modules_from_module_with_path(
+                        *declaration_node,
+                        &source.content,
+                        new_module_path,
+                    )?;
+                    modules.append(&mut extracted);
+                } else {
+                    // Add module declaration as a symbol
+                    symbols.push(Symbol {
+                        name: mod_name,
+                        source_code: child
+                            .utf8_text(source.content.as_bytes())
+                            .map_err(|e| LaibraryError::Parse(e.to_string()))?
+                            .to_string(),
+                        doc_comment: None,
+                    });
+                }
+            }
+            _ => {}
+        }
+    }
+
+    modules.push(Namespace {
+        name: module_path,
+        symbols,
+    });
+
+    Ok(modules)
+}
+
+fn extract_modules_from_module_with_path(
     module_node: Node,
     source_code: &str,
     module_path: String,
@@ -52,11 +122,7 @@ fn extract_modules_from_module(
             "mod_item" => {
                 let mod_name = extract_name(&child, source_code)
                     .ok_or_else(|| LaibraryError::Parse("Invalid module name".to_string()))?;
-                let new_module_path = if module_path.is_empty() {
-                    mod_name.clone()
-                } else {
-                    format!("{}::{}", module_path, mod_name)
-                };
+                let new_module_path = format!("{}::{}", module_path, mod_name);
 
                 // Look for the declaration_list node
                 let mut cursor = child.walk();
@@ -65,7 +131,7 @@ fn extract_modules_from_module(
                     .iter()
                     .find(|mod_child| mod_child.kind() == "declaration_list")
                 {
-                    let mut extracted = extract_modules_from_module(
+                    let mut extracted = extract_modules_from_module_with_path(
                         *declaration_node,
                         source_code,
                         new_module_path,
