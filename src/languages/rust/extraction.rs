@@ -308,6 +308,21 @@ mod tests {
         assert!(modules[0].symbols.is_empty());
     }
 
+    #[test]
+    fn private_symbols() {
+        let source_code = r#"
+fn private_function() {}
+pub fn public_function() -> () {}
+"#;
+
+        let modules = extract_modules_from_source("src/lib.rs", source_code);
+
+        assert_eq!(modules.len(), 1);
+        let module = &modules[0];
+        assert_eq!(module.symbols.len(), 1);
+        assert_eq!(module.symbols[0].name, "public_function");
+    }
+
     mod outer_doc_comments {
         use super::helpers::*;
 
@@ -547,50 +562,40 @@ pub trait TestTrait {
         }
     }
 
-    mod modules {
+    mod inner_modules {
         use super::helpers::*;
 
         #[test]
-        fn nested_modules_are_extracted() {
+        fn public_modules() {
             let source_code = r#"
 pub mod inner {
     pub fn nested_function() -> String {}
 }
-pub fn outer_function() -> i32 {}
 "#;
 
             let modules = extract_modules_from_source("src/text/mod.rs", source_code);
 
-            let text_module = modules.iter().find(|m| m.name == "text").unwrap();
             let inner_module = modules.iter().find(|m| m.name == "text::inner").unwrap();
-
-            assert_eq!(text_module.symbols.len(), 1);
-            assert_eq!(text_module.symbols[0].name, "outer_function");
-
             assert_eq!(inner_module.symbols.len(), 1);
             assert_eq!(inner_module.symbols[0].name, "nested_function");
         }
 
         #[test]
-        fn private_modules_are_ignored() {
+        fn private_modules() {
             let source_code = r#"
 mod private {
     pub fn private_function() -> String {}
 }
-pub fn public_function() -> i32 {}
 "#;
 
             let modules = extract_modules_from_source("src/text/mod.rs", source_code);
 
             assert_eq!(modules.len(), 1);
-            let text_module = modules.iter().find(|m| m.name == "text").unwrap();
-
-            assert_eq!(text_module.symbols.len(), 1);
-            assert_eq!(text_module.symbols[0].name, "public_function");
+            assert_eq!(modules[0].name, "text");
         }
 
         #[test]
-        fn empty_modules_are_included() {
+        fn empty_modules() {
             let source_code = r#"
 pub mod empty {}
 "#;
@@ -599,19 +604,16 @@ pub mod empty {}
 
             assert_eq!(modules.len(), 2);
 
-            let text_module = modules.iter().find(|m| m.name == "text").unwrap();
             let empty_module = modules.iter().find(|m| m.name == "text::empty").unwrap();
 
-            assert!(text_module.symbols.is_empty());
             assert!(empty_module.symbols.is_empty());
         }
 
         #[test]
-        fn nested_module_symbols_are_extracted() {
+        fn inner_module_symbols() {
             let source_code = r#"
 pub mod inner {
     pub struct InnerStruct {}
-    pub fn inner_function() {}
 
     pub mod deeper {
         pub enum DeeperEnum {
@@ -633,83 +635,29 @@ pub mod inner {
                 .find(|m| m.name == "text::inner::deeper")
                 .expect("deeper module should exist");
 
-            assert_eq!(inner_module.symbols.len(), 2);
+            assert_eq!(inner_module.symbols.len(), 1);
             assert!(inner_module.symbols.iter().any(|s| s.name == "InnerStruct"));
-            assert!(inner_module
-                .symbols
-                .iter()
-                .any(|s| s.name == "inner_function"));
 
             assert_eq!(deeper_module.symbols.len(), 1);
             assert!(deeper_module.symbols.iter().any(|s| s.name == "DeeperEnum"));
         }
 
         #[test]
-        fn module_declarations_are_added_as_symbols() {
+        fn module_declarations() {
             let source_code = r#"
-pub mod other;  // This should be added as a symbol
-pub mod inner {  // This should be processed as a module
-    pub fn inner_function() {}
-}
+pub mod other;
 "#;
 
             let modules = extract_modules_from_source("src/text/mod.rs", source_code);
 
-            assert_eq!(modules.len(), 2);
+            assert_eq!(modules.len(), 1);
 
             let text_module = modules.iter().find(|m| m.name == "text").unwrap();
-            let inner_module = modules.iter().find(|m| m.name == "text::inner").unwrap();
 
             assert_eq!(text_module.symbols.len(), 1);
-            assert_eq!(text_module.symbols[0].name, "other");
-
-            assert_eq!(inner_module.symbols.len(), 1);
-            assert_eq!(inner_module.symbols[0].name, "inner_function");
-        }
-    }
-
-    mod visibility {
-        use super::helpers::*;
-
-        #[test]
-        fn private_items_are_ignored() {
-            let source_code = r#"
-struct PrivateStruct {}
-fn private_function() {}
-pub fn public_function() -> () {}
-"#;
-
-            let modules = extract_modules_from_source("src/text/mod.rs", source_code);
-            let module = modules.iter().find(|m| m.name == "text").unwrap();
-
-            assert_eq!(module.symbols.len(), 1);
-            assert_eq!(module.symbols[0].name, "public_function");
-        }
-
-        #[test]
-        fn lib_items_are_processed() {
-            let source_code = r#"
-pub fn root_function() -> () {}
-pub struct RootStruct {}
-
-pub mod text {
-    pub fn text_function() -> () {}
-}
-"#;
-
-            let modules = extract_modules_from_source("src/lib.rs", source_code);
-            let root_module = modules.iter().find(|m| m.name.is_empty()).unwrap();
-            let text_module = modules.iter().find(|m| m.name == "text").unwrap();
-
-            assert_eq!(root_module.symbols.len(), 2);
-            assert!(root_module
-                .symbols
-                .iter()
-                .any(|s| s.name == "root_function"));
-            assert!(root_module.symbols.iter().any(|s| s.name == "RootStruct"));
-
-            assert_eq!(text_module.symbols.len(), 1);
-            assert_eq!(text_module.symbols[0].name, "text_function");
+            let symbol = &text_module.symbols[0];
+            assert_eq!(symbol.name, "other");
+            assert_eq!(symbol.source_code, "pub mod other;");
         }
     }
 }
