@@ -1,5 +1,4 @@
 use super::extraction;
-use super::formatting;
 use super::metadata;
 use crate::analysers::Analyser;
 use crate::error::LaibraryError;
@@ -43,9 +42,5 @@ impl Analyser for RustAnalyser {
         }
 
         Ok(modules)
-    }
-
-    fn format_namespace(&self, module: &Namespace) -> String {
-        formatting::format_module(module)
     }
 }
