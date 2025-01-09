@@ -63,6 +63,7 @@ mod tests {
             name: STUB_LIBRARY_NAME.to_string(),
             version: STUB_LIBRARY_VERSION.to_string(),
             documentation: STUB_DOCUMENTATION.to_string(),
+            entry_point: std::path::PathBuf::from("src/lib.rs"),
         }
     }
 

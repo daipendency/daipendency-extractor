@@ -33,10 +33,21 @@ pub fn extract_metadata(path: &Path) -> Result<PackageMetadata, LaibraryError> {
     let readme_path = path.join("README.md");
     let documentation = fs::read_to_string(&readme_path).unwrap_or_default();
 
+    let entry_point = if let Some(lib) = cargo_toml_value.get("lib") {
+        if let Some(path) = lib.get("path").and_then(Value::as_str) {
+            Path::new(path).to_path_buf()
+        } else {
+            Path::new("src/lib.rs").to_path_buf()
+        }
+    } else {
+        Path::new("src/lib.rs").to_path_buf()
+    };
+
     Ok(PackageMetadata {
         name,
         version,
         documentation,
+        entry_point,
     })
 }
 
@@ -45,16 +56,27 @@ mod tests {
     use super::*;
     use tempfile::TempDir;
 
-    fn create_test_crate(dir: &Path) -> Result<(), std::io::Error> {
-        // Create Cargo.toml
-        let cargo_toml = r#"
+    fn create_test_crate(dir: &Path, custom_lib: Option<String>) -> Result<(), std::io::Error> {
+        let mut cargo_toml = String::from(
+            r#"
 [package]
 name = "test-crate"
 version = "0.1.0"
-"#;
+"#,
+        );
+
+        if let Some(lib_path) = custom_lib {
+            cargo_toml.push_str(&format!(
+                r#"
+[lib]
+path = "{}"
+"#,
+                lib_path
+            ));
+        }
+
         fs::write(dir.join("Cargo.toml"), cargo_toml)?;
 
-        // Create README.md
         fs::write(dir.join("README.md"), "Test crate")?;
 
         Ok(())
@@ -63,7 +85,7 @@ version = "0.1.0"
     #[test]
     fn test_extract_metadata_valid_crate() {
         let temp_dir = TempDir::new().unwrap();
-        create_test_crate(temp_dir.path()).unwrap();
+        create_test_crate(temp_dir.path(), None).unwrap();
 
         let result = extract_metadata(temp_dir.path());
         assert!(result.is_ok());
@@ -106,11 +128,36 @@ version = "0.1.0"
     #[test]
     fn test_missing_readme() {
         let temp_dir = TempDir::new().unwrap();
-        create_test_crate(temp_dir.path()).unwrap();
+        create_test_crate(temp_dir.path(), None).unwrap();
         fs::remove_file(temp_dir.path().join("README.md")).unwrap();
 
         let result = extract_metadata(temp_dir.path());
         assert!(result.is_ok());
         assert_eq!(result.unwrap().documentation, "");
+    }
+
+    mod entrypoint {
+        use super::*;
+
+        #[test]
+        fn test_default_entry_point() {
+            let temp_dir = TempDir::new().unwrap();
+
+            create_test_crate(temp_dir.path(), None).unwrap();
+
+            let metadata = extract_metadata(temp_dir.path()).unwrap();
+            assert_eq!(metadata.entry_point, Path::new("src/lib.rs"));
+        }
+
+        #[test]
+        fn test_custom_entry_point() {
+            let temp_dir = TempDir::new().unwrap();
+            let custom_lib_path = "src/custom_lib.rs";
+
+            create_test_crate(temp_dir.path(), Some(custom_lib_path.to_string())).unwrap();
+
+            let metadata = extract_metadata(temp_dir.path()).unwrap();
+            assert_eq!(metadata.entry_point, Path::new(custom_lib_path));
+        }
     }
 }

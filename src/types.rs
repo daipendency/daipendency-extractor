@@ -5,6 +5,7 @@ pub struct PackageMetadata {
     pub name: String,
     pub version: String,
     pub documentation: String,
+    pub entry_point: std::path::PathBuf,
 }
 
 #[derive(Debug)]
