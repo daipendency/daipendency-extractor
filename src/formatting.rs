@@ -106,7 +106,10 @@ mod tests {
 
             let documentation = format_library_context(&metadata, &[]).unwrap();
 
-            assert_contains!(documentation, &format!("\n---\n\n{STUB_DOCUMENTATION}\n\n# API"));
+            assert_contains!(
+                documentation,
+                &format!("\n---\n\n{STUB_DOCUMENTATION}\n\n# API")
+            );
         }
     }
 

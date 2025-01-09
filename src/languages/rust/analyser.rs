@@ -33,11 +33,15 @@ impl Analyser for RustAnalyser {
         metadata::extract_metadata(path)
     }
 
-    fn extract_public_api(&self, sources: &[SourceFile]) -> Result<Vec<Namespace>, LaibraryError> {
+    fn extract_public_api(
+        &self,
+        sources: &[SourceFile],
+        crate_name: &str,
+    ) -> Result<Vec<Namespace>, LaibraryError> {
         let mut modules = Vec::new();
 
         for source in sources {
-            let mut source_modules = extraction::extract_modules_from_file(source)?;
+            let mut source_modules = extraction::extract_modules_from_file(source, crate_name)?;
             modules.append(&mut source_modules);
         }
 

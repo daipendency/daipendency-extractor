@@ -3,11 +3,24 @@ use crate::types::{Namespace, SourceFile, Symbol};
 use std::path::Path;
 use tree_sitter::Node;
 
-pub fn extract_modules_from_file(source: &SourceFile) -> Result<Vec<Namespace>, LaibraryError> {
+pub fn extract_modules_from_file(
+    source: &SourceFile,
+    crate_name: &str,
+) -> Result<Vec<Namespace>, LaibraryError> {
     let module_path = determine_module_path(&source.path)?;
     let module_path = module_path.unwrap_or_default();
 
-    extract_modules_from_module(source.tree.root_node(), &source.content, module_path)
+    let prefixed_module_path = if module_path.is_empty() {
+        crate_name.to_string()
+    } else {
+        format!("{}::{}", crate_name, module_path)
+    };
+
+    extract_modules_from_module(
+        source.tree.root_node(),
+        &source.content,
+        prefixed_module_path,
+    )
 }
 
 fn extract_modules_from_module(
@@ -269,6 +282,8 @@ mod tests {
     use std::path::PathBuf;
     use tree_sitter::Parser;
 
+    const STUB_CRATE_NAME: &str = "test_crate";
+
     mod helpers {
         use super::*;
 
@@ -294,14 +309,14 @@ mod tests {
 
         pub fn extract_symbol(source_code: &str, symbol_name: &str) -> Symbol {
             let source = create_source_file("src/lib.rs", source_code);
-            let modules = extract_modules_from_file(&source).unwrap();
-            let root_module = get_namespace(&modules, "").unwrap();
+            let modules = extract_modules_from_file(&source, STUB_CRATE_NAME).unwrap();
+            let root_module = get_namespace(&modules, STUB_CRATE_NAME).unwrap();
             root_module.get_symbol(symbol_name).unwrap().clone()
         }
 
         pub fn extract_modules_from_source(path: &str, content: &str) -> Vec<Namespace> {
             let source = create_source_file(path, content);
-            extract_modules_from_file(&source).unwrap()
+            extract_modules_from_file(&source, STUB_CRATE_NAME).unwrap()
         }
     }
 
@@ -312,7 +327,7 @@ mod tests {
         let modules = extract_modules_from_source("src/empty.rs", source_code);
 
         assert_eq!(modules.len(), 1);
-        assert_eq!(modules[0].name, "empty");
+        assert_eq!(modules[0].name, format!("{}::empty", STUB_CRATE_NAME));
         assert!(modules[0].symbols.is_empty());
     }
 
@@ -603,7 +618,7 @@ pub trait TestTrait {
     }
 
     mod module_path {
-        use super::helpers::*;
+        use super::*;
 
         #[test]
         fn lib_rs_has_no_module_path() {
@@ -612,7 +627,7 @@ pub trait TestTrait {
             let modules = extract_modules_from_source("src/lib.rs", source_code);
 
             assert_eq!(modules.len(), 1);
-            assert_eq!(modules[0].name, "");
+            assert_eq!(modules[0].name, STUB_CRATE_NAME);
         }
 
         #[test]
@@ -622,7 +637,7 @@ pub trait TestTrait {
             let modules = extract_modules_from_source("src/text.rs", source_code);
 
             assert_eq!(modules.len(), 1);
-            assert_eq!(modules[0].name, "text");
+            assert_eq!(modules[0].name, format!("{}::text", STUB_CRATE_NAME));
         }
 
         #[test]
@@ -632,7 +647,7 @@ pub trait TestTrait {
             let modules = extract_modules_from_source("src/text/mod.rs", source_code);
 
             assert_eq!(modules.len(), 1);
-            assert_eq!(modules[0].name, "text");
+            assert_eq!(modules[0].name, format!("{}::text", STUB_CRATE_NAME));
         }
 
         #[test]
@@ -642,12 +657,15 @@ pub trait TestTrait {
             let modules = extract_modules_from_source("src/text/formatter.rs", source_code);
 
             assert_eq!(modules.len(), 1);
-            assert_eq!(modules[0].name, "text::formatter");
+            assert_eq!(
+                modules[0].name,
+                format!("{}::text::formatter", STUB_CRATE_NAME)
+            );
         }
     }
 
     mod inner_modules {
-        use super::helpers::*;
+        use super::*;
 
         #[test]
         fn public_modules() {
@@ -659,7 +677,8 @@ pub mod inner {
 
             let modules = extract_modules_from_source("src/text/mod.rs", source_code);
 
-            let inner_module = modules.iter().find(|m| m.name == "text::inner").unwrap();
+            let inner_module =
+                get_namespace(&modules, &format!("{}::text::inner", STUB_CRATE_NAME)).unwrap();
             assert_eq!(inner_module.symbols.len(), 1);
             assert_eq!(inner_module.symbols[0].name, "nested_function");
         }
@@ -675,7 +694,7 @@ mod private {
             let modules = extract_modules_from_source("src/text/mod.rs", source_code);
 
             assert_eq!(modules.len(), 1);
-            assert_eq!(modules[0].name, "text");
+            assert_eq!(modules[0].name, format!("{}::text", STUB_CRATE_NAME));
         }
 
         #[test]
@@ -688,8 +707,8 @@ pub mod empty {}
 
             assert_eq!(modules.len(), 2);
 
-            let empty_module = modules.iter().find(|m| m.name == "text::empty").unwrap();
-
+            let empty_module =
+                get_namespace(&modules, &format!("{}::text::empty", STUB_CRATE_NAME)).unwrap();
             assert!(empty_module.symbols.is_empty());
         }
 
@@ -709,15 +728,15 @@ pub mod inner {
 
             let modules = extract_modules_from_source("src/text/mod.rs", source_code);
 
-            let inner_module = modules
-                .iter()
-                .find(|m| m.name == "text::inner")
-                .expect("inner module should exist");
+            let inner_module =
+                get_namespace(&modules, &format!("{}::text::inner", STUB_CRATE_NAME))
+                    .expect("inner module should exist");
 
-            let deeper_module = modules
-                .iter()
-                .find(|m| m.name == "text::inner::deeper")
-                .expect("deeper module should exist");
+            let deeper_module = get_namespace(
+                &modules,
+                &format!("{}::text::inner::deeper", STUB_CRATE_NAME),
+            )
+            .expect("deeper module should exist");
 
             assert_eq!(inner_module.symbols.len(), 1);
             assert!(inner_module.symbols.iter().any(|s| s.name == "InnerStruct"));
@@ -736,7 +755,8 @@ pub mod other;
 
             assert_eq!(modules.len(), 1);
 
-            let text_module = modules.iter().find(|m| m.name == "text").unwrap();
+            let text_module =
+                get_namespace(&modules, &format!("{}::text", STUB_CRATE_NAME)).unwrap();
 
             assert_eq!(text_module.symbols.len(), 1);
             let symbol = &text_module.symbols[0];

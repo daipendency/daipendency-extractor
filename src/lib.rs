@@ -32,7 +32,7 @@ pub fn generate_documentation(language: &str, path: &Path) -> Result<String, Lai
         analyser.get_file_extensions(),
     )?;
     let sources = parse_source_files(&file_paths, &analyser.get_parser_language())?;
-    let namespaces = analyser.extract_public_api(&sources)?;
+    let namespaces = analyser.extract_public_api(&sources, &metadata.name)?;
 
     format_library_context(&metadata, &namespaces)
 }
