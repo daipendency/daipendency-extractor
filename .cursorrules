@@ -13,6 +13,7 @@
 
 # Testing
 
+- Organise the internal structure of each unit test using the Arrange-Act-Assert (AAA) pattern, separating each part with a blank line. Do NOT add any comments to hint at the structure.
 - All the branches of each unit under test should be covered, preferably with a unit test for each branch. In other words, each unit test should cover exactly one scenario.
 - When changing the unit under test, make sure to add, update and/or remove tests accordingly.
 - Only test the public API of the unit under test.
