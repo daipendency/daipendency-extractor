@@ -8,13 +8,16 @@ pub fn format_library_context(
     let api_content = format_namespaces_content(namespaces);
 
     Ok(format!(
-        r#"<library name="{name}" version="{version}">
-    <documentation>
+        r#"---
+library_name: {name}
+library_version: {version}
+---
+
 {documentation}
-    </documentation>
-    <api>
-{api_content}    </api>
-</library>"#,
+
+# API
+
+{api_content}"#,
         name = metadata.name,
         version = metadata.version,
         documentation = metadata.documentation.trim()
@@ -27,7 +30,7 @@ fn format_namespaces_content(namespaces: &[Namespace]) -> String {
         .filter(|n| !n.symbols.is_empty())
         .map(format_namespace_content)
         .collect::<Vec<_>>()
-        .join("\n\n")
+        .join("\n")
 }
 
 fn format_namespace_content(namespace: &Namespace) -> String {
@@ -38,78 +41,82 @@ fn format_namespace_content(namespace: &Namespace) -> String {
         .collect::<Vec<_>>()
         .join("\n\n");
 
-    format!("{}:\n\n```\n{}\n```", namespace.name, symbols_formatted)
+    format!("## {}\n\n```\n{}\n```\n", namespace.name, symbols_formatted)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use assertables::{assert_contains, assert_starts_with};
+    use assertables::assert_contains;
 
     const STUB_LIBRARY_NAME: &str = "test-lib";
     const STUB_LIBRARY_VERSION: &str = "1.0.0";
+    const STUB_DOCUMENTATION: &str = "Test documentation";
 
-    fn assert_api_is_empty(documentation: &str) {
-        let api_content = documentation
-            .split("<api>")
-            .nth(1)
-            .and_then(|s| s.split("</api>").next())
-            .unwrap_or("")
-            .trim();
-        assert!(
-            api_content.is_empty(),
-            "Expected empty API content, got: {api_content}"
-        );
+    fn create_metadata() -> PackageMetadata {
+        PackageMetadata {
+            name: STUB_LIBRARY_NAME.to_string(),
+            version: STUB_LIBRARY_VERSION.to_string(),
+            documentation: STUB_DOCUMENTATION.to_string(),
+        }
     }
 
     mod metadata {
         use super::*;
 
+        fn get_frontmatter_lines(documentation: String) -> Option<Vec<String>> {
+            let mut lines = documentation.lines();
+            (lines.next() == Some("---")).then(|| {
+                lines
+                    .take_while(|&line| line != "---")
+                    .map(String::from)
+                    .collect()
+            })
+        }
+
         #[test]
         fn library_name() {
-            let metadata = PackageMetadata {
-                name: STUB_LIBRARY_NAME.to_string(),
-                version: STUB_LIBRARY_VERSION.to_string(),
-                documentation: "".to_string(),
-            };
+            let metadata = create_metadata();
 
             let documentation = format_library_context(&metadata, &[]).unwrap();
+            let frontmatter_lines = get_frontmatter_lines(documentation).unwrap();
 
-            assert_starts_with!(documentation, "<library name=\"test-lib\"");
+            assert_contains!(
+                frontmatter_lines,
+                &format!("library_name: {STUB_LIBRARY_NAME}")
+            );
         }
 
         #[test]
         fn library_version() {
-            let metadata = PackageMetadata {
-                name: STUB_LIBRARY_NAME.to_string(),
-                version: STUB_LIBRARY_VERSION.to_string(),
-                documentation: "".to_string(),
-            };
+            let metadata = create_metadata();
+
+            let documentation = format_library_context(&metadata, &[]).unwrap();
+            let frontmatter_lines = get_frontmatter_lines(documentation).unwrap();
+
+            assert_contains!(
+                frontmatter_lines,
+                &format!("library_version: {STUB_LIBRARY_VERSION}")
+            );
+        }
+
+        #[test]
+        fn library_documentation() {
+            let metadata = create_metadata();
 
             let documentation = format_library_context(&metadata, &[]).unwrap();
 
-            assert_contains!(
-                documentation,
-                &format!(r#"version="{STUB_LIBRARY_VERSION}""#)
-            );
+            assert_contains!(documentation, &format!("\n---\n\n{STUB_DOCUMENTATION}\n\n# API"));
         }
     }
 
-    mod namespaces {
+    mod api {
         use crate::types::Symbol;
 
         use super::*;
 
         const STUB_SOURCE_CODE: &str = "SOURCE_CODE";
         const STUB_MULTI_LINE_SOURCE_CODE: &str = "MULTI_LINE\nSOURCE_CODE";
-
-        fn create_metadata() -> PackageMetadata {
-            PackageMetadata {
-                name: STUB_LIBRARY_NAME.to_string(),
-                version: STUB_LIBRARY_VERSION.to_string(),
-                documentation: "".to_string(),
-            }
-        }
 
         fn create_namespace(name: &str, symbols: Vec<Symbol>) -> Namespace {
             Namespace {
@@ -123,6 +130,14 @@ mod tests {
                 name: name.to_string(),
                 source_code: source_code.to_string(),
             }
+        }
+
+        fn assert_api_is_empty(documentation: &str) {
+            let api_content = documentation.split("\n# API\n").nth(1).unwrap_or("").trim();
+            assert!(
+                api_content.is_empty(),
+                "Expected empty API content, got: {api_content}"
+            );
         }
 
         #[test]
@@ -141,7 +156,7 @@ mod tests {
 
             assert_contains!(
                 documentation,
-                &format!("{}:\n\n```\n{}\n```", namespace_name, STUB_SOURCE_CODE)
+                &format!("## {}\n\n```\n{}\n```", namespace_name, STUB_SOURCE_CODE)
             );
         }
 
@@ -155,8 +170,8 @@ mod tests {
             let documentation =
                 format_library_context(&create_metadata(), &[namespace1, namespace2]).unwrap();
 
-            assert_contains!(documentation, "test1:\n\n```\n");
-            assert_contains!(documentation, "test2:\n\n```\n");
+            assert_contains!(documentation, "## test1\n\n```\n");
+            assert_contains!(documentation, "## test2\n\n```\n");
         }
 
         mod symbols {
