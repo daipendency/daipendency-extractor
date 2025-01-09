@@ -1,5 +1,5 @@
 mod analyser;
-pub mod extraction;
 pub mod metadata;
+pub mod parsing;
 
 pub use analyser::RustAnalyser;

@@ -1,5 +1,5 @@
-use super::extraction;
 use super::metadata;
+use super::parsing;
 use crate::analysers::Analyser;
 use crate::error::LaibraryError;
 use crate::types::{Namespace, PackageMetadata, SourceFile};
@@ -41,7 +41,7 @@ impl Analyser for RustAnalyser {
         let mut modules = Vec::new();
 
         for source in sources {
-            let mut source_modules = extraction::extract_modules_from_file(source, crate_name)?;
+            let mut source_modules = parsing::extract_modules_from_file(source, crate_name)?;
             modules.append(&mut source_modules);
         }
 
