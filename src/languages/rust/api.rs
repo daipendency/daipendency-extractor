@@ -9,6 +9,9 @@ pub fn build_public_api(
     crate_name: &str,
     parser: &mut Parser,
 ) -> Result<Vec<Namespace>, LaibraryError> {
+    let content = std::fs::read_to_string(path).map_err(|e| {
+        LaibraryError::Parse(format!("Failed to read file '{}': {}", path.display(), e))
+    })?;
     let module_path = determine_module_path(path)?;
     let module_path = module_path.unwrap_or_default();
 
@@ -18,7 +21,7 @@ pub fn build_public_api(
         format!("{}::{}", crate_name, module_path)
     };
 
-    let file_symbols = parsing::parse_rust_file(path, parser)?;
+    let file_symbols = parsing::parse_rust_file(&content, parser)?;
     extract_modules(file_symbols, &prefixed_module_path)
 }
 
@@ -94,8 +97,22 @@ mod tests {
     use super::*;
     use crate::languages::rust::test_helpers::setup_parser;
     use crate::languages::test_helpers::{create_file, create_temp_dir};
+    use std::path::PathBuf;
 
     const STUB_CRATE_NAME: &str = "test_crate";
+
+    #[test]
+    fn nonexistent_file() {
+        let mut parser = setup_parser();
+        let path = PathBuf::from("nonexistent.rs");
+
+        let err = build_public_api(&path, STUB_CRATE_NAME, &mut parser).unwrap_err();
+
+        assert!(matches!(err, LaibraryError::Parse(_)));
+        assert!(err
+            .to_string()
+            .contains("Failed to read file 'nonexistent.rs'"));
+    }
 
     #[test]
     fn lib_rs_has_no_module_path() {
