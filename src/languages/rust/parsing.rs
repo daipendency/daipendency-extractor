@@ -1,10 +1,16 @@
 use crate::error::LaibraryError;
 use crate::languages::rust::types::RustSymbol;
-use crate::types::{SourceFile, Symbol};
-use tree_sitter::Node;
+use crate::types::Symbol;
+use std::path::Path;
+use tree_sitter::{Node, Parser};
 
-pub fn parse_rust_file(source: &SourceFile) -> Result<Vec<RustSymbol>, LaibraryError> {
-    extract_symbols_from_module(source.tree.root_node(), &source.content)
+pub fn parse_rust_file(path: &Path, parser: &mut Parser) -> Result<Vec<RustSymbol>, LaibraryError> {
+    let content = std::fs::read_to_string(path)?;
+    let tree = parser
+        .parse(&content, None)
+        .ok_or_else(|| LaibraryError::Parse("Failed to parse source file".to_string()))?;
+
+    extract_symbols_from_module(tree.root_node(), &content)
 }
 
 fn extract_symbols_from_module(
@@ -65,85 +71,88 @@ fn extract_outer_doc_comments(
     node: &Node,
     source_code: &str,
 ) -> Result<Option<String>, LaibraryError> {
-    if let Some(sibling) = node.prev_sibling() {
-        let mut cursor = sibling.walk();
-        let children: Vec<_> = sibling.children(&mut cursor).collect();
+    let sibling = match node.prev_sibling() {
+        Some(s) => s,
+        None => return Ok(None),
+    };
 
-        let is_outer_doc_comment = children
-            .iter()
-            .any(|c| c.kind() == "outer_doc_comment_marker");
+    let mut cursor = sibling.walk();
+    let children: Vec<_> = sibling.children(&mut cursor).collect();
 
-        if !is_outer_doc_comment {
-            return Ok(None);
+    let is_outer_doc_comment = children
+        .iter()
+        .any(|c| c.kind() == "outer_doc_comment_marker");
+
+    if !is_outer_doc_comment {
+        return Ok(None);
+    }
+
+    match sibling.kind() {
+        "block_comment" => {
+            if children.iter().any(|child| child.kind() == "doc_comment") {
+                let text = sibling
+                    .utf8_text(source_code.as_bytes())
+                    .map_err(|e| LaibraryError::Parse(e.to_string()))?;
+                Ok(Some(text.to_string() + "\n"))
+            } else {
+                Ok(None)
+            }
         }
+        "line_comment" => {
+            let mut current = Some(sibling);
+            let mut doc_comments = Vec::new();
 
-        match sibling.kind() {
-            "block_comment" => {
-                if children.iter().any(|child| child.kind() == "doc_comment") {
-                    let text = sibling
+            while let Some(comment) = current {
+                let mut cursor = comment.walk();
+                let children: Vec<_> = comment.children(&mut cursor).collect();
+
+                let has_outer_doc = children
+                    .iter()
+                    .any(|c| c.kind() == "outer_doc_comment_marker");
+                let has_doc_comment = children.iter().any(|child| child.kind() == "doc_comment");
+
+                if has_outer_doc && has_doc_comment {
+                    let comment_text = comment
                         .utf8_text(source_code.as_bytes())
                         .map_err(|e| LaibraryError::Parse(e.to_string()))?;
-                    Ok(Some(text.to_string() + "\n"))
+                    doc_comments.push(comment_text.to_string());
                 } else {
-                    Ok(None)
+                    break;
                 }
-            }
-            "line_comment" => {
-                let mut current = Some(sibling);
-                let mut doc_comments = Vec::new();
 
-                while let Some(comment) = current {
-                    let mut cursor = comment.walk();
-                    let children: Vec<_> = comment.children(&mut cursor).collect();
-
-                    let has_outer_doc = children
-                        .iter()
-                        .any(|c| c.kind() == "outer_doc_comment_marker");
-                    let has_doc_comment =
-                        children.iter().any(|child| child.kind() == "doc_comment");
-
-                    if has_outer_doc && has_doc_comment {
-                        let comment_text = comment
-                            .utf8_text(source_code.as_bytes())
-                            .map_err(|e| LaibraryError::Parse(e.to_string()))?;
-                        doc_comments.push(comment_text.to_string());
-                    } else {
+                current = comment.prev_sibling();
+                if let Some(next) = current {
+                    if next.kind() != "line_comment" {
                         break;
                     }
-
-                    current = comment.prev_sibling();
-                    if let Some(next) = current {
-                        if next.kind() != "line_comment" {
-                            break;
-                        }
-                    }
                 }
-
-                if doc_comments.is_empty() {
-                    return Ok(None);
-                }
-
-                Ok(Some(
-                    doc_comments.into_iter().rev().collect::<Vec<_>>().join(""),
-                ))
             }
-            _ => Ok(None),
+
+            if doc_comments.is_empty() {
+                return Ok(None);
+            }
+
+            Ok(Some(
+                doc_comments.into_iter().rev().collect::<Vec<_>>().join(""),
+            ))
         }
-    } else {
-        Ok(None)
+        _ => Ok(None),
     }
 }
 
 fn is_public(node: &Node) -> bool {
     let mut cursor = node.walk();
-    let mut children = node.children(&mut cursor);
-    children.any(|child| child.kind() == "visibility_modifier")
+    let children: Vec<_> = node.children(&mut cursor).collect();
+    children
+        .iter()
+        .any(|child| child.kind() == "visibility_modifier")
 }
 
 fn extract_name(node: &Node, source_code: &str) -> Result<String, LaibraryError> {
     let mut cursor = node.walk();
-    let mut children = node.children(&mut cursor);
+    let children: Vec<_> = node.children(&mut cursor).collect();
     children
+        .iter()
         .find(|child| matches!(child.kind(), "identifier" | "type_identifier"))
         .and_then(|child| {
             child
@@ -167,7 +176,7 @@ fn get_symbol_source_code(node: Node, source_code: &str) -> Result<String, Laibr
             let block_node = node
                 .children(&mut cursor)
                 .find(|n| n.kind() == "block")
-                .unwrap();
+                .ok_or_else(|| LaibraryError::Parse("Failed to find function block".to_string()))?;
             format!(
                 "{};",
                 &source_code[node.start_byte()..block_node.start_byte()].trim_end()
@@ -178,7 +187,9 @@ fn get_symbol_source_code(node: Node, source_code: &str) -> Result<String, Laibr
             let declaration_list = node
                 .children(&mut cursor)
                 .find(|n| n.kind() == "declaration_list")
-                .unwrap();
+                .ok_or_else(|| {
+                    LaibraryError::Parse("Failed to find trait declaration list".to_string())
+                })?;
 
             let mut trait_source = String::new();
             trait_source.push_str(&source_code[node.start_byte()..declaration_list.start_byte()]);
@@ -212,88 +223,43 @@ fn get_symbol_source_code(node: Node, source_code: &str) -> Result<String, Laibr
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::analysers::Analyser;
-    use crate::languages::rust::analyser::RustAnalyser;
-    use crate::types::Symbol;
-    use helpers::*;
-    use std::path::PathBuf;
-    use tree_sitter::Parser;
-
-    mod helpers {
-        use super::*;
-        use crate::languages::rust::types::RustSymbol;
-
-        pub fn create_source_file(path: &str, content: &str) -> SourceFile {
-            let mut parser = Parser::new();
-            let analyser = RustAnalyser::new();
-            parser
-                .set_language(&analyser.get_parser_language())
-                .unwrap();
-            let tree = parser
-                .parse(content, None)
-                .expect("Failed to parse test source file");
-            SourceFile {
-                path: PathBuf::from(path),
-                content: content.to_string(),
-                tree,
-            }
-        }
-
-        pub fn get_inner_module<'a>(
-            path: &str,
-            symbols: &'a [RustSymbol],
-        ) -> Option<&'a [RustSymbol]> {
-            let parts: Vec<&str> = path.split("::").collect();
-            let mut current_symbols = symbols;
-
-            for part in parts {
-                match current_symbols.iter().find_map(|symbol| {
-                    if let RustSymbol::Module { name, content } = symbol {
-                        if name == part {
-                            Some(content)
-                        } else {
-                            None
-                        }
-                    } else {
-                        None
-                    }
-                }) {
-                    Some(next_symbols) => current_symbols = next_symbols,
-                    None => return None,
-                }
-            }
-
-            Some(current_symbols)
-        }
-
-        pub fn get_symbol<'a>(symbols: &'a [RustSymbol], name: &str) -> Option<&'a Symbol> {
-            symbols.iter().find_map(|s| {
-                if let RustSymbol::Symbol(symbol) = s {
-                    if symbol.name == name {
-                        Some(symbol)
-                    } else {
-                        None
-                    }
-                } else {
-                    None
-                }
-            })
-        }
-    }
+    use crate::languages::rust::test_helpers::{get_inner_module, get_rust_symbol, setup_parser};
+    use crate::languages::test_helpers::create_temp_file;
+    use assertables::{assert_contains, assert_starts_with};
 
     #[test]
     fn empty_source_file() {
         let source_code = "";
-        let source = create_source_file("src/lib.rs", source_code);
+        let temp_file = create_temp_file(source_code);
+        let mut parser = setup_parser();
 
-        let symbols = parse_rust_file(&source).unwrap();
+        let symbols = parse_rust_file(temp_file.path(), &mut parser).unwrap();
 
         assert!(symbols.is_empty());
     }
 
+    #[test]
+    fn nonexistent_file() {
+        let mut parser = setup_parser();
+
+        let result = parse_rust_file(Path::new("nonexistent.rs"), &mut parser);
+
+        assert!(matches!(result, Err(LaibraryError::Io(_))));
+    }
+
+    #[test]
+    fn invalid_syntax() {
+        let source_code = "fn main() { let x = 1; let y = 2; let z = x + y; }";
+        let temp_file = create_temp_file(source_code);
+        let mut parser = setup_parser();
+
+        let result = parse_rust_file(temp_file.path(), &mut parser);
+
+        assert!(result.is_ok());
+    }
+
     mod function_body {
         use super::*;
-        use assertables::assert_contains;
 
         #[test]
         fn function_declaration() {
@@ -302,11 +268,12 @@ pub fn test_function() -> i32 {
     return 42;
 }
 "#;
-            let source = create_source_file("src/lib.rs", source_code);
+            let temp_file = create_temp_file(source_code);
+            let mut parser = setup_parser();
 
-            let symbols = parse_rust_file(&source).unwrap();
+            let symbols = parse_rust_file(temp_file.path(), &mut parser).unwrap();
 
-            let symbol = get_symbol(&symbols, "test_function").unwrap();
+            let symbol = get_rust_symbol(&symbols, "test_function").unwrap();
             assert_eq!(symbol.source_code, "pub fn test_function() -> i32;");
         }
 
@@ -319,11 +286,12 @@ pub trait TestTrait {
     }
 }
 "#;
-            let source = create_source_file("src/lib.rs", source_code);
+            let temp_file = create_temp_file(source_code);
+            let mut parser = setup_parser();
 
-            let symbols = parse_rust_file(&source).unwrap();
+            let symbols = parse_rust_file(temp_file.path(), &mut parser).unwrap();
 
-            let symbol = get_symbol(&symbols, "TestTrait").unwrap();
+            let symbol = get_rust_symbol(&symbols, "TestTrait").unwrap();
             assert_contains!(symbol.source_code, "pub fn test_method(&self) -> i32;");
         }
     }
@@ -337,11 +305,12 @@ pub trait TestTrait {
 fn private_function() {}
 pub fn public_function() -> () {}
 "#;
-            let source = create_source_file("src/lib.rs", source_code);
+            let temp_file = create_temp_file(source_code);
+            let mut parser = setup_parser();
 
-            let symbols = parse_rust_file(&source).unwrap();
+            let symbols = parse_rust_file(temp_file.path(), &mut parser).unwrap();
 
-            assert!(get_symbol(&symbols, "private_function").is_none());
+            assert!(get_rust_symbol(&symbols, "private_function").is_none());
         }
 
         #[test]
@@ -349,11 +318,12 @@ pub fn public_function() -> () {}
             let source_code = r#"
 pub(crate) fn crate_function() {}
 "#;
-            let source = create_source_file("src/lib.rs", source_code);
+            let temp_file = create_temp_file(source_code);
+            let mut parser = setup_parser();
 
-            let symbols = parse_rust_file(&source).unwrap();
+            let symbols = parse_rust_file(temp_file.path(), &mut parser).unwrap();
 
-            assert!(get_symbol(&symbols, "crate_function").is_some());
+            assert!(get_rust_symbol(&symbols, "crate_function").is_some());
         }
 
         #[test]
@@ -361,28 +331,29 @@ pub(crate) fn crate_function() {}
             let source_code = r#"
 pub(super) fn super_function() {}
 "#;
-            let source = create_source_file("src/lib.rs", source_code);
+            let temp_file = create_temp_file(source_code);
+            let mut parser = setup_parser();
 
-            let symbols = parse_rust_file(&source).unwrap();
+            let symbols = parse_rust_file(temp_file.path(), &mut parser).unwrap();
 
-            assert!(get_symbol(&symbols, "super_function").is_some());
+            assert!(get_rust_symbol(&symbols, "super_function").is_some());
         }
     }
 
     mod outer_doc_comments {
         use super::*;
-        use assertables::{assert_contains, assert_starts_with};
 
         #[test]
         fn no_doc_comments() {
             let source_code = r#"
 pub struct Test {}
 "#;
-            let source = create_source_file("test.rs", source_code);
+            let temp_file = create_temp_file(source_code);
+            let mut parser = setup_parser();
 
-            let symbols = parse_rust_file(&source).unwrap();
+            let symbols = parse_rust_file(temp_file.path(), &mut parser).unwrap();
 
-            let symbol = get_symbol(&symbols, "Test").unwrap();
+            let symbol = get_rust_symbol(&symbols, "Test").unwrap();
             assert_eq!(symbol.source_code, "pub struct Test {}");
         }
 
@@ -392,11 +363,12 @@ pub struct Test {}
 /// A documented item
 pub struct Test {}
 "#;
-            let source = create_source_file("test.rs", source_code);
+            let temp_file = create_temp_file(source_code);
+            let mut parser = setup_parser();
 
-            let symbols = parse_rust_file(&source).unwrap();
+            let symbols = parse_rust_file(temp_file.path(), &mut parser).unwrap();
 
-            let symbol = get_symbol(&symbols, "Test").unwrap();
+            let symbol = get_rust_symbol(&symbols, "Test").unwrap();
             assert_eq!(
                 symbol.source_code,
                 "/// A documented item\npub struct Test {}"
@@ -410,11 +382,12 @@ pub struct Test {}
 /// Second line
 pub struct Test {}
 "#;
-            let source = create_source_file("test.rs", source_code);
+            let temp_file = create_temp_file(source_code);
+            let mut parser = setup_parser();
 
-            let symbols = parse_rust_file(&source).unwrap();
+            let symbols = parse_rust_file(temp_file.path(), &mut parser).unwrap();
 
-            let symbol = get_symbol(&symbols, "Test").unwrap();
+            let symbol = get_rust_symbol(&symbols, "Test").unwrap();
             assert_starts_with!(symbol.source_code, "/// First line\n/// Second line\n");
         }
 
@@ -425,11 +398,12 @@ pub struct Test {}
 //! Inner doc
 pub struct Test {}
 "#;
-            let source = create_source_file("test.rs", source_code);
+            let temp_file = create_temp_file(source_code);
+            let mut parser = setup_parser();
 
-            let symbols = parse_rust_file(&source).unwrap();
+            let symbols = parse_rust_file(temp_file.path(), &mut parser).unwrap();
 
-            let symbol = get_symbol(&symbols, "Test").unwrap();
+            let symbol = get_rust_symbol(&symbols, "Test").unwrap();
             assert_starts_with!(symbol.source_code, "pub struct Test");
         }
 
@@ -440,11 +414,12 @@ pub struct Test {}
 // Regular comment
 pub struct Test {}
 "#;
-            let source = create_source_file("test.rs", source_code);
+            let temp_file = create_temp_file(source_code);
+            let mut parser = setup_parser();
 
-            let symbols = parse_rust_file(&source).unwrap();
+            let symbols = parse_rust_file(temp_file.path(), &mut parser).unwrap();
 
-            let symbol = get_symbol(&symbols, "Test").unwrap();
+            let symbol = get_rust_symbol(&symbols, "Test").unwrap();
             assert_starts_with!(symbol.source_code, "pub struct Test");
         }
 
@@ -457,11 +432,12 @@ pub struct Test {}
  */
 pub struct Test {}
 "#;
-            let source = create_source_file("test.rs", source_code);
+            let temp_file = create_temp_file(source_code);
+            let mut parser = setup_parser();
 
-            let symbols = parse_rust_file(&source).unwrap();
+            let symbols = parse_rust_file(temp_file.path(), &mut parser).unwrap();
 
-            let symbol = get_symbol(&symbols, "Test").unwrap();
+            let symbol = get_rust_symbol(&symbols, "Test").unwrap();
             assert_starts_with!(symbol.source_code, "/** A block doc comment\n * with multiple lines\n * and some indentation\n */\npub struct Test");
         }
 
@@ -474,11 +450,12 @@ pub struct Test {}
 /// This is the struct's doc
 pub struct Test {}
 "#;
-            let source = create_source_file("test.rs", source_code);
+            let temp_file = create_temp_file(source_code);
+            let mut parser = setup_parser();
 
-            let symbols = parse_rust_file(&source).unwrap();
+            let symbols = parse_rust_file(temp_file.path(), &mut parser).unwrap();
 
-            let symbol = get_symbol(&symbols, "Test").unwrap();
+            let symbol = get_rust_symbol(&symbols, "Test").unwrap();
             assert_starts_with!(symbol.source_code, "/// This is the struct's doc\n");
         }
 
@@ -491,11 +468,12 @@ pub struct FirstStruct {}
 /// Second struct's doc
 pub struct SecondStruct {}
 "#;
-            let source = create_source_file("test.rs", source_code);
+            let temp_file = create_temp_file(source_code);
+            let mut parser = setup_parser();
 
-            let symbols = parse_rust_file(&source).unwrap();
+            let symbols = parse_rust_file(temp_file.path(), &mut parser).unwrap();
 
-            let symbol = get_symbol(&symbols, "SecondStruct").unwrap();
+            let symbol = get_rust_symbol(&symbols, "SecondStruct").unwrap();
             assert_starts_with!(symbol.source_code, "/// Second struct's doc\n");
         }
 
@@ -508,11 +486,12 @@ pub struct SecondStruct {}
  */
 pub struct Test {}
 "#;
-            let source = create_source_file("test.rs", source_code);
+            let temp_file = create_temp_file(source_code);
+            let mut parser = setup_parser();
 
-            let symbols = parse_rust_file(&source).unwrap();
+            let symbols = parse_rust_file(temp_file.path(), &mut parser).unwrap();
 
-            let symbol = get_symbol(&symbols, "Test").unwrap();
+            let symbol = get_rust_symbol(&symbols, "Test").unwrap();
             assert_starts_with!(
                 symbol.source_code,
                 "/** This block comment\n * should be returned\n */\n"
@@ -527,11 +506,12 @@ pub fn test_function() -> i32 {
     42
 }
 "#;
-            let source = create_source_file("test.rs", source_code);
+            let temp_file = create_temp_file(source_code);
+            let mut parser = setup_parser();
 
-            let symbols = parse_rust_file(&source).unwrap();
+            let symbols = parse_rust_file(temp_file.path(), &mut parser).unwrap();
 
-            let symbol = get_symbol(&symbols, "test_function").unwrap();
+            let symbol = get_rust_symbol(&symbols, "test_function").unwrap();
             assert_starts_with!(symbol.source_code, "/// A documented function\n");
         }
 
@@ -543,11 +523,12 @@ pub struct TestStruct {
     field: i32
 }
 "#;
-            let source = create_source_file("test.rs", source_code);
+            let temp_file = create_temp_file(source_code);
+            let mut parser = setup_parser();
 
-            let symbols = parse_rust_file(&source).unwrap();
+            let symbols = parse_rust_file(temp_file.path(), &mut parser).unwrap();
 
-            let symbol = get_symbol(&symbols, "TestStruct").unwrap();
+            let symbol = get_rust_symbol(&symbols, "TestStruct").unwrap();
             assert_starts_with!(symbol.source_code, "/// A documented struct\n");
         }
 
@@ -560,11 +541,12 @@ pub enum TestEnum {
     B
 }
 "#;
-            let source = create_source_file("test.rs", source_code);
+            let temp_file = create_temp_file(source_code);
+            let mut parser = setup_parser();
 
-            let symbols = parse_rust_file(&source).unwrap();
+            let symbols = parse_rust_file(temp_file.path(), &mut parser).unwrap();
 
-            let symbol = get_symbol(&symbols, "TestEnum").unwrap();
+            let symbol = get_rust_symbol(&symbols, "TestEnum").unwrap();
             assert_starts_with!(symbol.source_code, "/// A documented enum\n");
         }
 
@@ -576,11 +558,12 @@ pub trait TestTrait {
     fn test_method(&self);
 }
 "#;
-            let source = create_source_file("test.rs", source_code);
+            let temp_file = create_temp_file(source_code);
+            let mut parser = setup_parser();
 
-            let symbols = parse_rust_file(&source).unwrap();
+            let symbols = parse_rust_file(temp_file.path(), &mut parser).unwrap();
 
-            let symbol = get_symbol(&symbols, "TestTrait").unwrap();
+            let symbol = get_rust_symbol(&symbols, "TestTrait").unwrap();
             assert_starts_with!(symbol.source_code, "/// A documented trait\n");
         }
 
@@ -594,11 +577,12 @@ pub trait TestTrait {
     }
 }
 "#;
-            let source = create_source_file("test.rs", source_code);
+            let temp_file = create_temp_file(source_code);
+            let mut parser = setup_parser();
 
-            let symbols = parse_rust_file(&source).unwrap();
+            let symbols = parse_rust_file(temp_file.path(), &mut parser).unwrap();
 
-            let symbol = get_symbol(&symbols, "TestTrait").unwrap();
+            let symbol = get_rust_symbol(&symbols, "TestTrait").unwrap();
             assert_contains!(
                 symbol.source_code,
                 "/// A documented method\n    pub fn test_method(&self) -> i32;"
@@ -616,12 +600,13 @@ pub mod inner {
     pub fn nested_function() -> String {}
 }
 "#;
-            let source = create_source_file("src/lib.rs", source_code);
+            let temp_file = create_temp_file(source_code);
+            let mut parser = setup_parser();
 
-            let symbols = parse_rust_file(&source).unwrap();
+            let symbols = parse_rust_file(temp_file.path(), &mut parser).unwrap();
 
             let inner_content = get_inner_module("inner", &symbols).unwrap();
-            let symbol = get_symbol(inner_content, "nested_function").unwrap();
+            let symbol = get_rust_symbol(inner_content, "nested_function").unwrap();
             assert_eq!(symbol.name, "nested_function");
         }
 
@@ -632,9 +617,10 @@ mod private {
     pub fn private_function() -> String {}
 }
 "#;
-            let source = create_source_file("src/lib.rs", source_code);
+            let temp_file = create_temp_file(source_code);
+            let mut parser = setup_parser();
 
-            let symbols = parse_rust_file(&source).unwrap();
+            let symbols = parse_rust_file(temp_file.path(), &mut parser).unwrap();
 
             assert!(symbols.is_empty(), "Private modules should be ignored");
         }
@@ -644,9 +630,10 @@ mod private {
             let source_code = r#"
 pub mod empty {}
 "#;
-            let source = create_source_file("src/lib.rs", source_code);
+            let temp_file = create_temp_file(source_code);
+            let mut parser = setup_parser();
 
-            let symbols = parse_rust_file(&source).unwrap();
+            let symbols = parse_rust_file(temp_file.path(), &mut parser).unwrap();
 
             let empty_content = get_inner_module("empty", &symbols).unwrap();
             assert_eq!(symbols.len(), 1);
@@ -666,22 +653,23 @@ pub mod inner {
     }
 }
 "#;
-            let source = create_source_file("src/lib.rs", source_code);
+            let temp_file = create_temp_file(source_code);
+            let mut parser = setup_parser();
 
-            let symbols = parse_rust_file(&source).unwrap();
+            let symbols = parse_rust_file(temp_file.path(), &mut parser).unwrap();
 
             assert_eq!(symbols.len(), 1);
             let inner_content =
                 get_inner_module("inner", &symbols).expect("Should find inner module");
             assert_eq!(inner_content.len(), 2);
             let inner_struct =
-                get_symbol(inner_content, "InnerStruct").expect("Should find InnerStruct");
+                get_rust_symbol(inner_content, "InnerStruct").expect("Should find InnerStruct");
             assert_eq!(inner_struct.name, "InnerStruct");
             let deeper_content =
                 get_inner_module("deeper", inner_content).expect("Should find deeper module");
             assert_eq!(deeper_content.len(), 1);
             let deeper_enum =
-                get_symbol(deeper_content, "DeeperEnum").expect("Should find DeeperEnum");
+                get_rust_symbol(deeper_content, "DeeperEnum").expect("Should find DeeperEnum");
             assert_eq!(deeper_enum.name, "DeeperEnum");
         }
 
@@ -690,11 +678,12 @@ pub mod inner {
             let source_code = r#"
 pub mod other;
 "#;
-            let source = create_source_file("src/lib.rs", source_code);
+            let temp_file = create_temp_file(source_code);
+            let mut parser = setup_parser();
 
-            let symbols = parse_rust_file(&source).unwrap();
+            let symbols = parse_rust_file(temp_file.path(), &mut parser).unwrap();
 
-            let symbol = get_symbol(&symbols, "other").unwrap();
+            let symbol = get_rust_symbol(&symbols, "other").unwrap();
             assert_eq!(symbol.name, "other");
             assert_eq!(symbol.source_code, "pub mod other;");
         }

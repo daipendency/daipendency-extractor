@@ -10,7 +10,7 @@ use crate::error::LaibraryError;
 use crate::formatting::format_library_context;
 use crate::languages::get_analyser;
 use crate::listing::get_source_file_paths;
-use crate::parsing::parse_source_files;
+use crate::parsing::get_parser;
 use std::path::Path;
 
 /// Generate API documentation for a library in the specified language.
@@ -31,8 +31,8 @@ pub fn generate_documentation(language: &str, path: &Path) -> Result<String, Lai
         path.to_string_lossy().into_owned(),
         analyser.get_file_extensions(),
     )?;
-    let sources = parse_source_files(&file_paths, &analyser.get_parser_language())?;
-    let namespaces = analyser.extract_public_api(&sources, &metadata.name)?;
+    let mut parser = get_parser(&analyser.get_parser_language())?;
+    let namespaces = analyser.extract_public_api(&file_paths, &metadata.name, &mut parser)?;
 
     format_library_context(&metadata, &namespaces, language)
 }

@@ -1,9 +1,9 @@
 use super::{api, metadata};
 use crate::analysers::Analyser;
 use crate::error::LaibraryError;
-use crate::types::{Namespace, PackageMetadata, SourceFile};
+use crate::types::{Namespace, PackageMetadata};
 use std::path::Path;
-use tree_sitter::Language;
+use tree_sitter::{Language, Parser};
 
 pub struct RustAnalyser;
 
@@ -34,13 +34,15 @@ impl Analyser for RustAnalyser {
 
     fn extract_public_api(
         &self,
-        sources: &[SourceFile],
+        file_paths: &[String],
         crate_name: &str,
+        parser: &mut Parser,
     ) -> Result<Vec<Namespace>, LaibraryError> {
         let mut modules = Vec::new();
 
-        for source in sources {
-            let mut source_modules = api::build_public_api(source, crate_name)?;
+        for file_path in file_paths {
+            let mut source_modules =
+                api::build_public_api(Path::new(file_path), crate_name, parser)?;
             modules.append(&mut source_modules);
         }
 

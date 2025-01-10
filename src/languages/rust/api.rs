@@ -1,13 +1,15 @@
 use crate::error::LaibraryError;
 use crate::languages::rust::{parsing, types::RustSymbol};
-use crate::types::{Namespace, SourceFile};
+use crate::types::Namespace;
 use std::path::Path;
+use tree_sitter::Parser;
 
 pub fn build_public_api(
-    source: &SourceFile,
+    path: &Path,
     crate_name: &str,
+    parser: &mut Parser,
 ) -> Result<Vec<Namespace>, LaibraryError> {
-    let module_path = determine_module_path(&source.path)?;
+    let module_path = determine_module_path(path)?;
     let module_path = module_path.unwrap_or_default();
 
     let prefixed_module_path = if module_path.is_empty() {
@@ -16,11 +18,11 @@ pub fn build_public_api(
         format!("{}::{}", crate_name, module_path)
     };
 
-    let file_symbols = parsing::parse_rust_file(source)?;
+    let file_symbols = parsing::parse_rust_file(path, parser)?;
     extract_modules(file_symbols, &prefixed_module_path)
 }
 
-pub fn extract_modules(
+fn extract_modules(
     symbols: Vec<RustSymbol>,
     prefix: &str,
 ) -> Result<Vec<Namespace>, LaibraryError> {
@@ -90,60 +92,74 @@ fn determine_module_path(file_path: &Path) -> Result<Option<String>, LaibraryErr
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::Symbol;
+    use crate::languages::rust::test_helpers::setup_parser;
+    use crate::languages::test_helpers::{create_file, create_temp_dir};
 
     const STUB_CRATE_NAME: &str = "test_crate";
 
     #[test]
     fn lib_rs_has_no_module_path() {
-        let path = Path::new("src/lib.rs");
-        assert!(determine_module_path(path).unwrap().is_none());
+        let temp_dir = create_temp_dir();
+        let path = temp_dir.path().join("src").join("lib.rs");
+        create_file(&path, "");
+
+        let module_path = determine_module_path(&path).unwrap();
+
+        assert!(module_path.is_none());
     }
 
     #[test]
     fn direct_module_file_has_single_segment_path() {
-        let path = Path::new("src/text.rs");
-        assert_eq!(
-            determine_module_path(path).unwrap().unwrap(),
-            "text".to_string()
-        );
+        let temp_dir = create_temp_dir();
+        let path = temp_dir.path().join("src").join("text.rs");
+        create_file(&path, "");
+
+        let module_path = determine_module_path(&path).unwrap();
+
+        assert_eq!(module_path.unwrap(), "text".to_string());
     }
 
     #[test]
     fn mod_rs_has_directory_name_path() {
-        let path = Path::new("src/text/mod.rs");
-        assert_eq!(
-            determine_module_path(path).unwrap().unwrap(),
-            "text".to_string()
-        );
+        let temp_dir = create_temp_dir();
+        let path = temp_dir.path().join("src").join("text").join("mod.rs");
+        create_file(&path, "");
+
+        let module_path = determine_module_path(&path).unwrap();
+
+        assert_eq!(module_path.unwrap(), "text".to_string());
     }
 
     #[test]
     fn nested_module_has_multi_segment_path() {
-        let path = Path::new("src/text/formatter.rs");
-        assert_eq!(
-            determine_module_path(path).unwrap().unwrap(),
-            "text::formatter".to_string()
-        );
+        let temp_dir = create_temp_dir();
+        let path = temp_dir
+            .path()
+            .join("src")
+            .join("text")
+            .join("formatter.rs");
+        create_file(&path, "");
+
+        let module_path = determine_module_path(&path).unwrap();
+
+        assert_eq!(module_path.unwrap(), "text::formatter".to_string());
     }
 
     #[test]
     fn extract_modules_handles_nested_structure() {
-        let symbols = vec![
-            RustSymbol::Symbol(Symbol {
-                name: "root_fn".to_string(),
-                source_code: "pub fn root_fn() {}".to_string(),
-            }),
-            RustSymbol::Module {
-                name: "submod".to_string(),
-                content: vec![RustSymbol::Symbol(Symbol {
-                    name: "nested_fn".to_string(),
-                    source_code: "pub fn nested_fn() {}".to_string(),
-                })],
-            },
-        ];
+        let source_code = r#"
+pub fn root_fn() {}
 
-        let namespaces = extract_modules(symbols, STUB_CRATE_NAME).unwrap();
+pub mod submod {
+    pub fn nested_fn() {}
+}
+"#;
+        let temp_dir = create_temp_dir();
+        let path = temp_dir.path().join("src").join("lib.rs");
+        create_file(&path, source_code);
+        let mut parser = setup_parser();
+
+        let namespaces = build_public_api(&path, STUB_CRATE_NAME, &mut parser).unwrap();
 
         assert_eq!(namespaces.len(), 2);
 

@@ -1,7 +1,7 @@
 use crate::error::LaibraryError;
-use crate::types::{Namespace, PackageMetadata, SourceFile};
+use crate::types::{Namespace, PackageMetadata};
 use std::path::Path;
-use tree_sitter::Language;
+use tree_sitter::{Language, Parser};
 
 pub trait Analyser {
     fn get_file_extensions(&self) -> Vec<String>;
@@ -9,7 +9,8 @@ pub trait Analyser {
     fn get_package_metadata(&self, path: &Path) -> Result<PackageMetadata, LaibraryError>;
     fn extract_public_api(
         &self,
-        sources: &[SourceFile],
+        file_paths: &[String],
         library_name: &str,
+        parser: &mut Parser,
     ) -> Result<Vec<Namespace>, LaibraryError>;
 }

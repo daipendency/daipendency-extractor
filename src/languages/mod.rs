@@ -1,4 +1,5 @@
 pub mod rust;
+mod test_helpers;
 
 use crate::analysers::Analyser;
 use crate::error::LaibraryError;

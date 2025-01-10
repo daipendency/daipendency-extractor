@@ -1,18 +1,9 @@
-use tree_sitter::Tree;
-
 #[derive(Debug)]
 pub struct PackageMetadata {
     pub name: String,
     pub version: String,
     pub documentation: String,
     pub entry_point: std::path::PathBuf,
-}
-
-#[derive(Debug)]
-pub struct SourceFile {
-    pub path: std::path::PathBuf,
-    pub content: String,
-    pub tree: Tree,
 }
 
 #[derive(Debug)]

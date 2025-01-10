@@ -1,7 +1,8 @@
 mod analyser;
 mod api;
 pub mod metadata;
-pub mod parsing;
+mod parsing;
+mod test_helpers;
 mod types;
 
 pub use analyser::RustAnalyser;
