@@ -1,4 +1,4 @@
-pub mod rust;
+mod rust;
 mod test_helpers;
 
 use crate::analysers::Analyser;

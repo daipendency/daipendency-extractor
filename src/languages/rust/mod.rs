@@ -1,6 +1,6 @@
 mod analyser;
 mod api;
-pub mod metadata;
+mod metadata;
 mod parsing;
 mod test_helpers;
 mod types;
