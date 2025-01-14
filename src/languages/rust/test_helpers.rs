@@ -41,7 +41,7 @@ pub fn get_inner_module<'a>(path: &str, symbols: &'a [RustSymbol]) -> Option<&'a
 
 pub fn get_rust_symbol<'a>(symbols: &'a [RustSymbol], name: &str) -> Option<&'a Symbol> {
     symbols.iter().find_map(|s| {
-        if let RustSymbol::Symbol(symbol) = s {
+        if let RustSymbol::Symbol { symbol, .. } = s {
             if symbol.name == name {
                 Some(symbol)
             } else {

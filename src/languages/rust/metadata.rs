@@ -4,6 +4,9 @@ use std::fs;
 use std::path::Path;
 use toml::Value;
 
+const DEFAULT_LIB_PATH: &str = "src/lib.rs";
+const README_PATH: &str = "README.md";
+
 pub fn extract_metadata(path: &Path) -> Result<PackageMetadata, LaibraryError> {
     let cargo_toml_path = path.join("Cargo.toml");
     let cargo_toml_content = fs::read_to_string(&cargo_toml_path)
@@ -30,17 +33,17 @@ pub fn extract_metadata(path: &Path) -> Result<PackageMetadata, LaibraryError> {
         .to_string();
 
     // Read README.md for documentation - don't panic if missing
-    let readme_path = path.join("README.md");
+    let readme_path = path.join(README_PATH);
     let documentation = fs::read_to_string(&readme_path).unwrap_or_default();
 
     let entry_point = if let Some(lib) = cargo_toml_value.get("lib") {
-        if let Some(path) = lib.get("path").and_then(Value::as_str) {
-            Path::new(path).to_path_buf()
+        if let Some(path_str) = lib.get("path").and_then(Value::as_str) {
+            path.join(Path::new(path_str))
         } else {
-            Path::new("src/lib.rs").to_path_buf()
+            path.join(DEFAULT_LIB_PATH)
         }
     } else {
-        Path::new("src/lib.rs").to_path_buf()
+        path.join(DEFAULT_LIB_PATH)
     };
 
     Ok(PackageMetadata {
@@ -77,7 +80,7 @@ path = "{}"
 
         fs::write(dir.join("Cargo.toml"), cargo_toml)?;
 
-        fs::write(dir.join("README.md"), "Test crate")?;
+        fs::write(dir.join(README_PATH), "Test crate")?;
 
         Ok(())
     }
@@ -129,7 +132,7 @@ path = "{}"
     fn test_missing_readme() {
         let temp_dir = TempDir::new().unwrap();
         create_test_crate(temp_dir.path(), None).unwrap();
-        fs::remove_file(temp_dir.path().join("README.md")).unwrap();
+        fs::remove_file(temp_dir.path().join(README_PATH)).unwrap();
 
         let result = extract_metadata(temp_dir.path());
         assert!(result.is_ok());
@@ -146,7 +149,7 @@ path = "{}"
             create_test_crate(temp_dir.path(), None).unwrap();
 
             let metadata = extract_metadata(temp_dir.path()).unwrap();
-            assert_eq!(metadata.entry_point, Path::new("src/lib.rs"));
+            assert_eq!(metadata.entry_point, temp_dir.path().join(DEFAULT_LIB_PATH));
         }
 
         #[test]
@@ -157,7 +160,7 @@ path = "{}"
             create_test_crate(temp_dir.path(), Some(custom_lib_path.to_string())).unwrap();
 
             let metadata = extract_metadata(temp_dir.path()).unwrap();
-            assert_eq!(metadata.entry_point, Path::new(custom_lib_path));
+            assert_eq!(metadata.entry_point, temp_dir.path().join(custom_lib_path));
         }
     }
 }

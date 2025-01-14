@@ -22,20 +22,122 @@ fn extract_symbols_from_module(
     let mut cursor = module_node.walk();
 
     for child in module_node.children(&mut cursor) {
-        if !is_public(&child) {
-            continue;
-        }
-
         match child.kind() {
             "function_item" | "struct_item" | "enum_item" | "trait_item" | "macro_definition" => {
+                if !is_public(&child) {
+                    continue;
+                }
                 let name = extract_name(&child, source_code)?;
-                symbols.push(RustSymbol::Symbol(Symbol {
-                    name,
-                    source_code: get_symbol_source_code(child, source_code)?,
-                }));
+                symbols.push(RustSymbol::Symbol {
+                    symbol: Symbol {
+                        name,
+                        source_code: get_symbol_source_code(child, source_code)?,
+                    },
+                });
+            }
+            "use_declaration" => {
+                if !is_public(&child) {
+                    continue;
+                }
+                let mut cursor = child.walk();
+                let children: Vec<_> = child.children(&mut cursor).collect();
+
+                if let Some(scoped) = children.iter().find(|c| c.kind() == "scoped_identifier") {
+                    let mut scoped_cursor = scoped.walk();
+                    let scoped_children: Vec<_> = scoped.children(&mut scoped_cursor).collect();
+
+                    let mut path_parts = Vec::new();
+                    for scoped_child in &scoped_children {
+                        let text = scoped_child
+                            .utf8_text(source_code.as_bytes())
+                            .map_err(|e| LaibraryError::Parse(e.to_string()))?;
+                        path_parts.push(text);
+                    }
+
+                    if let Some(name) = path_parts.last() {
+                        let path = path_parts[..path_parts.len() - 1].join("");
+                        symbols.push(RustSymbol::SymbolReexport {
+                            name: name.to_string(),
+                            source_path: format!("{}{}", path, name),
+                        });
+                    }
+                } else if let Some(scoped_list) =
+                    children.iter().find(|c| c.kind() == "scoped_use_list")
+                {
+                    let mut scoped_cursor = scoped_list.walk();
+                    let scoped_children: Vec<_> =
+                        scoped_list.children(&mut scoped_cursor).collect();
+
+                    let path_prefix = if let Some(path) = scoped_children.first() {
+                        path.utf8_text(source_code.as_bytes())
+                            .map_err(|e| LaibraryError::Parse(e.to_string()))?
+                            .to_string()
+                    } else {
+                        String::new()
+                    };
+
+                    if let Some(use_list) = scoped_children.iter().find(|c| c.kind() == "use_list")
+                    {
+                        let mut list_cursor = use_list.walk();
+                        let list_items: Vec<_> = use_list.children(&mut list_cursor).collect();
+                        for list_item in list_items {
+                            if list_item.kind() == "identifier" {
+                                let name = list_item
+                                    .utf8_text(source_code.as_bytes())
+                                    .map_err(|e| LaibraryError::Parse(e.to_string()))?;
+                                symbols.push(RustSymbol::SymbolReexport {
+                                    name: name.to_string(),
+                                    source_path: format!("{}::{}", path_prefix, name),
+                                });
+                            }
+                        }
+                    }
+                } else if let Some(tree) = children.iter().find(|c| c.kind() == "use_tree") {
+                    let mut tree_cursor = tree.walk();
+                    let tree_children: Vec<_> = tree.children(&mut tree_cursor).collect();
+
+                    if let Some(list) = tree_children.iter().find(|c| c.kind() == "use_tree_list") {
+                        let mut list_cursor = list.walk();
+                        for list_item in list.children(&mut list_cursor) {
+                            if list_item.kind() == "use_tree" {
+                                if let Some(name_node) = list_item.child_by_field_name("name") {
+                                    let name = extract_name(&name_node, source_code)?;
+                                    let path_prefix =
+                                        if let Some(path) = tree.child_by_field_name("path") {
+                                            let prefix = path
+                                                .utf8_text(source_code.as_bytes())
+                                                .map_err(|e| LaibraryError::Parse(e.to_string()))?;
+                                            format!("{}::", prefix)
+                                        } else {
+                                            String::new()
+                                        };
+                                    symbols.push(RustSymbol::SymbolReexport {
+                                        name: name.clone(),
+                                        source_path: format!("{}{}", path_prefix, name),
+                                    });
+                                }
+                            }
+                        }
+                    } else if let Some(name_node) = tree.child_by_field_name("name") {
+                        let name = extract_name(&name_node, source_code)?;
+                        let path_prefix = if let Some(path) = tree.child_by_field_name("path") {
+                            let prefix = path
+                                .utf8_text(source_code.as_bytes())
+                                .map_err(|e| LaibraryError::Parse(e.to_string()))?;
+                            format!("{}::", prefix)
+                        } else {
+                            String::new()
+                        };
+                        symbols.push(RustSymbol::SymbolReexport {
+                            name: name.clone(),
+                            source_path: format!("{}{}", path_prefix, name),
+                        });
+                    }
+                }
             }
             "mod_item" => {
                 let inner_mod_name = extract_name(&child, source_code)?;
+                let is_public = is_public(&child);
 
                 let mut mod_cursor = child.walk();
                 let mod_children: Vec<_> = child.children(&mut mod_cursor).collect();
@@ -43,22 +145,22 @@ fn extract_symbols_from_module(
                     .iter()
                     .find(|mod_child| mod_child.kind() == "declaration_list")
                 {
+                    // This is an inline module with content
                     let inner_mod_symbols =
                         extract_symbols_from_module(*declaration_node, source_code)?;
 
-                    symbols.push(RustSymbol::Module {
-                        name: inner_mod_name,
-                        content: inner_mod_symbols,
-                    });
+                    if is_public {
+                        symbols.push(RustSymbol::Module {
+                            name: inner_mod_name,
+                            content: inner_mod_symbols,
+                        });
+                    }
                 } else {
-                    // It's a module re-export, not a module block
-                    symbols.push(RustSymbol::Symbol(Symbol {
+                    // This is a module declaration (mod foo;)
+                    symbols.push(RustSymbol::ModuleDeclaration {
                         name: inner_mod_name,
-                        source_code: child
-                            .utf8_text(source_code.as_bytes())
-                            .map_err(|e| LaibraryError::Parse(e.to_string()))?
-                            .to_string(),
-                    }));
+                        is_public,
+                    });
                 }
             }
             _ => {}
@@ -648,9 +750,120 @@ pub mod other;
 
             let symbols = parse_rust_file(source_code, &mut parser).unwrap();
 
-            let symbol = get_rust_symbol(&symbols, "other").unwrap();
-            assert_eq!(symbol.name, "other");
-            assert_eq!(symbol.source_code, "pub mod other;");
+            let symbol = match &symbols[0] {
+                RustSymbol::ModuleDeclaration { name, .. } => name,
+                _ => panic!("Expected ModuleDeclaration variant"),
+            };
+            assert_eq!(symbol, "other");
+        }
+    }
+
+    mod reexports {
+        use super::*;
+
+        #[test]
+        fn single_item() {
+            let source_code = r#"
+pub use inner::Format;
+"#;
+            let mut parser = setup_parser();
+
+            let symbols = parse_rust_file(source_code, &mut parser).unwrap();
+
+            assert_eq!(symbols.len(), 1);
+            match &symbols[0] {
+                RustSymbol::SymbolReexport {
+                    name, source_path, ..
+                } => {
+                    assert_eq!(name, "Format");
+                    assert_eq!(source_path, "inner::Format");
+                }
+                _ => panic!("Expected SymbolReexport variant"),
+            }
+        }
+
+        #[test]
+        fn use_tree_list() {
+            let source_code = r#"
+pub use inner::{TextFormatter, OtherType};
+"#;
+            let mut parser = setup_parser();
+
+            let symbols = parse_rust_file(source_code, &mut parser).unwrap();
+
+            assert_eq!(symbols.len(), 2);
+            let mut found_text_formatter = false;
+            let mut found_other_type = false;
+
+            for symbol in &symbols {
+                match symbol {
+                    RustSymbol::SymbolReexport {
+                        name, source_path, ..
+                    } => match name.as_str() {
+                        "TextFormatter" => {
+                            assert_eq!(source_path, "inner::TextFormatter");
+                            found_text_formatter = true;
+                        }
+                        "OtherType" => {
+                            assert_eq!(source_path, "inner::OtherType");
+                            found_other_type = true;
+                        }
+                        _ => panic!("Unexpected symbol name"),
+                    },
+                    _ => panic!("Expected SymbolReexport variant"),
+                }
+            }
+
+            assert!(found_text_formatter, "TextFormatter not found");
+            assert!(found_other_type, "OtherType not found");
+        }
+    }
+
+    mod module_declarations {
+        use super::*;
+
+        #[test]
+        fn public_module() {
+            let source_code = r#"
+pub mod test_module;
+"#;
+            let mut parser = setup_parser();
+
+            let symbols = parse_rust_file(source_code, &mut parser).unwrap();
+
+            assert_eq!(symbols.len(), 1);
+            match &symbols[0] {
+                RustSymbol::ModuleDeclaration {
+                    name,
+                    is_public,
+                } => {
+                    assert_eq!(name, "test_module");
+                    assert!(is_public);
+                }
+                _ => panic!("Expected ModuleDeclaration variant"),
+            }
+        }
+
+        #[test]
+        fn private_module() {
+            let source_code = r#"
+mod test_module;
+"#;
+            let mut parser = setup_parser();
+
+            let symbols = parse_rust_file(source_code, &mut parser).unwrap();
+
+            assert_eq!(symbols.len(), 1);
+            match &symbols[0] {
+                RustSymbol::ModuleDeclaration {
+                    name,
+                    is_public,
+                } => {
+                    assert_eq!(name, "test_module");
+                    assert!(!is_public);
+                }
+                _ => panic!("Expected ModuleDeclaration variant"),
+            }
         }
     }
 }

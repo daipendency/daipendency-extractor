@@ -20,10 +20,6 @@ impl Default for RustAnalyser {
 }
 
 impl Analyser for RustAnalyser {
-    fn get_file_extensions(&self) -> Vec<String> {
-        vec!["rs".to_string()]
-    }
-
     fn get_parser_language(&self) -> Language {
         tree_sitter_rust::LANGUAGE.into()
     }
@@ -34,18 +30,9 @@ impl Analyser for RustAnalyser {
 
     fn extract_public_api(
         &self,
-        file_paths: &[String],
-        crate_name: &str,
+        metadata: &PackageMetadata,
         parser: &mut Parser,
     ) -> Result<Vec<Namespace>, LaibraryError> {
-        let mut modules = Vec::new();
-
-        for file_path in file_paths {
-            let mut source_modules =
-                api::build_public_api(Path::new(file_path), crate_name, parser)?;
-            modules.append(&mut source_modules);
-        }
-
-        Ok(modules)
+        api::build_public_api(&metadata.entry_point, &metadata.name, parser)
     }
 }

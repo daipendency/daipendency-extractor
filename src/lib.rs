@@ -2,14 +2,14 @@ mod analysers;
 pub mod error;
 mod formatting;
 mod languages;
-mod listing;
 mod parsing;
+#[cfg(test)]
+mod test_helpers;
 mod types;
 
 use crate::error::LaibraryError;
 use crate::formatting::format_library_context;
 use crate::languages::get_analyser;
-use crate::listing::get_source_file_paths;
 use crate::parsing::get_parser;
 use std::path::Path;
 
@@ -27,12 +27,8 @@ pub fn generate_documentation(language: &str, path: &Path) -> Result<String, Lai
     let analyser = get_analyser(language)?;
 
     let metadata = analyser.get_package_metadata(path)?;
-    let file_paths = get_source_file_paths(
-        path.to_string_lossy().into_owned(),
-        analyser.get_file_extensions(),
-    )?;
     let mut parser = get_parser(&analyser.get_parser_language())?;
-    let namespaces = analyser.extract_public_api(&file_paths, &metadata.name, &mut parser)?;
+    let namespaces = analyser.extract_public_api(&metadata, &mut parser)?;
 
     format_library_context(&metadata, &namespaces, language)
 }
