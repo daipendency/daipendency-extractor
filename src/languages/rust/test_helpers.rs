@@ -21,7 +21,7 @@ pub fn get_inner_module<'a>(path: &str, symbols: &'a [RustSymbol]) -> Option<&'a
 
     for part in parts {
         match current_symbols.iter().find_map(|symbol| {
-            if let RustSymbol::Module { name, content } = symbol {
+            if let RustSymbol::Module { name, content, .. } = symbol {
                 if name == part {
                     Some(content)
                 } else {

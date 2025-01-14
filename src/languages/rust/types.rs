@@ -14,6 +14,7 @@ pub enum RustSymbol {
     Module {
         name: String,
         content: Vec<RustSymbol>,
+        doc_comment: Option<String>,
     },
     ModuleDeclaration {
         name: String,

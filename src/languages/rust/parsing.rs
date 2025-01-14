@@ -141,20 +141,21 @@ fn extract_symbols_from_module(
                 let inner_mod_name = extract_name(&child, source_code)?;
                 let is_public = is_public(&child);
 
-                let mut mod_cursor = child.walk();
-                let mod_children: Vec<_> = child.children(&mut mod_cursor).collect();
-                if let Some(declaration_node) = mod_children
-                    .iter()
-                    .find(|mod_child| mod_child.kind() == "declaration_list")
+                let mut cursor = child.walk();
+                let children: Vec<_> = child.children(&mut cursor).collect();
+                if let Some(declaration_list) =
+                    children.iter().find(|n| n.kind() == "declaration_list")
                 {
                     // This is an inline module with content
+                    let doc_comment = extract_inner_doc_comments(declaration_list, source_code)?;
                     let inner_mod_symbols =
-                        extract_symbols_from_module(*declaration_node, source_code)?;
+                        extract_symbols_from_module(*declaration_list, source_code)?;
 
                     if is_public {
                         symbols.push(RustSymbol::Module {
                             name: inner_mod_name,
                             content: inner_mod_symbols,
+                            doc_comment,
                         });
                     }
                 } else {
@@ -192,7 +193,7 @@ fn extract_inner_doc_comments(
             } else {
                 break;
             }
-        } else {
+        } else if !is_block_delimiter(&child) {
             break;
         }
     }
@@ -201,6 +202,10 @@ fn extract_inner_doc_comments(
     } else {
         Some(doc_comment)
     })
+}
+
+fn is_block_delimiter(node: &Node) -> bool {
+    matches!(node.kind(), "{" | "}")
 }
 
 fn extract_outer_doc_comments(
@@ -763,6 +768,64 @@ pub trait TestTrait {
 
     mod inner_modules {
         use super::*;
+
+        #[test]
+        fn module_without_inner_doc_comment() {
+            let source_code = r#"
+pub mod inner {
+    pub fn nested_function() -> String {}
+}
+"#;
+            let mut parser = setup_parser();
+
+            let rust_file = parse_rust_file(source_code, &mut parser).unwrap();
+
+            let inner_module = match &rust_file.symbols[0] {
+                RustSymbol::Module { name, content, .. } => {
+                    assert_eq!(name, "inner");
+                    content
+                }
+                _ => panic!("Expected Module variant"),
+            };
+            let symbol = get_rust_symbol(inner_module, "nested_function").unwrap();
+            assert_eq!(symbol.name, "nested_function");
+        }
+
+        #[test]
+        fn module_with_inner_doc_comment() {
+            let source_code = r#"
+pub mod inner {
+    //! This is the inner doc comment
+    //! It spans multiple lines
+
+    pub fn nested_function() -> String {}
+}
+"#;
+            let mut parser = setup_parser();
+
+            let rust_file = parse_rust_file(source_code, &mut parser).unwrap();
+
+            let inner_module = match &rust_file.symbols[0] {
+                RustSymbol::Module {
+                    name,
+                    content,
+                    doc_comment,
+                } => {
+                    assert_eq!(name, "inner");
+                    assert_eq!(
+                        doc_comment,
+                        &Some(
+                            "//! This is the inner doc comment\n//! It spans multiple lines\n"
+                                .to_string()
+                        )
+                    );
+                    content
+                }
+                _ => panic!("Expected Module variant"),
+            };
+            let symbol = get_rust_symbol(inner_module, "nested_function").unwrap();
+            assert_eq!(symbol.name, "nested_function");
+        }
 
         #[test]
         fn public_modules() {

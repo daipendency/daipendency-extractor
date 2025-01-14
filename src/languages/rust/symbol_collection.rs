@@ -66,10 +66,14 @@ fn collect_symbols_recursive(
 
     for symbol in rust_file.symbols {
         match symbol {
-            super::types::RustSymbol::Symbol { symbol, .. } => {
-                current_namespace.definitions.push(symbol);
+            super::types::RustSymbol::Symbol { symbol } => {
+                current_namespace.definitions.push(symbol.clone());
             }
-            super::types::RustSymbol::Module { name, content } => {
+            super::types::RustSymbol::Module {
+                name,
+                content,
+                doc_comment,
+            } => {
                 let module_namespace = format!(
                     "{}{}{}",
                     namespace_prefix,
@@ -85,11 +89,11 @@ fn collect_symbols_recursive(
                     definitions: Vec::new(),
                     references: Vec::new(),
                     is_public,
-                    doc_comment: None,
+                    doc_comment,
                 };
                 for symbol in content {
-                    if let super::types::RustSymbol::Symbol { symbol, .. } = symbol {
-                        module_raw_namespace.definitions.push(symbol);
+                    if let super::types::RustSymbol::Symbol { symbol } = symbol {
+                        module_raw_namespace.definitions.push(symbol.clone());
                     }
                 }
                 namespaces.push(module_raw_namespace);
@@ -552,7 +556,7 @@ pub fn public_function() {}
             r#"//! This is a file-level doc comment.
 //! It can span multiple lines.
 
-pub fn public_function() {}
+pub struct Test {}
 "#,
         );
 
@@ -568,5 +572,53 @@ pub fn public_function() {}
                     .to_string()
             )
         );
+    }
+
+    #[test]
+    fn test_collect_symbols_module_with_inner_doc_comment() {
+        let temp_dir = create_temp_dir();
+        let lib_rs = temp_dir.path().join("src").join("lib.rs");
+        create_file(
+            &lib_rs,
+            r#"
+pub mod inner {
+    //! This is the inner doc comment
+    //! It spans multiple lines
+
+    pub fn nested_function() -> String {}
+}
+"#,
+        );
+
+        let mut parser = setup_parser();
+        let namespaces = collect_symbols(&lib_rs, &mut parser).unwrap();
+
+        assert_eq!(namespaces.len(), 2);
+        let inner_namespace = namespaces.iter().find(|n| n.name == "inner").unwrap();
+        assert_eq!(
+            inner_namespace.doc_comment,
+            Some("//! This is the inner doc comment\n//! It spans multiple lines\n".to_string())
+        );
+    }
+
+    #[test]
+    fn test_collect_symbols_module_without_inner_doc_comment() {
+        let temp_dir = create_temp_dir();
+        let lib_rs = temp_dir.path().join("src").join("lib.rs");
+        create_file(
+            &lib_rs,
+            r#"
+pub mod inner {
+    pub fn nested_function() -> String {}
+}
+"#,
+        );
+
+        let mut parser = setup_parser();
+        let namespaces = collect_symbols(&lib_rs, &mut parser).unwrap();
+
+        assert_eq!(namespaces.len(), 2);
+        let inner_namespace = namespaces.iter().find(|n| n.name == "inner").unwrap();
+        assert_eq!(inner_namespace.doc_comment, None);
     }
 }

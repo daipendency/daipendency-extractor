@@ -41,7 +41,7 @@ fn format_namespace_content(namespace: &Namespace, language: &str) -> String {
         let mut code_block = String::new();
         if let Some(doc) = &namespace.doc_comment {
             code_block.push_str(doc);
-            code_block.push_str("\n");
+            code_block.push('\n');
         }
         code_block.push_str(
             &namespace
