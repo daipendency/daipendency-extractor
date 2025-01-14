@@ -120,8 +120,8 @@ fn collect_symbols_recursive(
             super::types::RustSymbol::SymbolReexport {
                 name, source_path, ..
             } => {
-                let source_path = if source_path.starts_with("self::") {
-                    source_path[6..].to_string()
+                let source_path = if let Some(stripped) = source_path.strip_prefix("self::") {
+                    stripped.to_string()
                 } else if source_path.contains("::") {
                     if namespace_prefix.is_empty() {
                         source_path.clone()
