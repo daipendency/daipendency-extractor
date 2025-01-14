@@ -833,10 +833,7 @@ pub mod test_module;
 
             assert_eq!(symbols.len(), 1);
             match &symbols[0] {
-                RustSymbol::ModuleDeclaration {
-                    name,
-                    is_public,
-                } => {
+                RustSymbol::ModuleDeclaration { name, is_public } => {
                     assert_eq!(name, "test_module");
                     assert!(is_public);
                 }
@@ -855,10 +852,7 @@ mod test_module;
 
             assert_eq!(symbols.len(), 1);
             match &symbols[0] {
-                RustSymbol::ModuleDeclaration {
-                    name,
-                    is_public,
-                } => {
+                RustSymbol::ModuleDeclaration { name, is_public } => {
                     assert_eq!(name, "test_module");
                     assert!(!is_public);
                 }

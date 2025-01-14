@@ -434,10 +434,16 @@ pub enum Format {
 
         let mut parser = setup_parser();
         let namespaces = collect_symbols(&lib_rs, &mut parser).unwrap();
-        let formatter = namespaces.iter().find(|n| n.name == "text::formatter").unwrap();
+        let formatter = namespaces
+            .iter()
+            .find(|n| n.name == "text::formatter")
+            .unwrap();
         assert_eq!(formatter.definitions.len(), 2);
         assert!(formatter.definitions.iter().any(|s| s.name == "Format"));
-        assert!(formatter.definitions.iter().any(|s| s.name == "TextFormatter"));
+        assert!(formatter
+            .definitions
+            .iter()
+            .any(|s| s.name == "TextFormatter"));
         assert!(!formatter.is_public);
 
         // But its symbols should be reexported in the text module
