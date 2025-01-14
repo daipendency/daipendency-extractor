@@ -1,17 +1,19 @@
 use crate::error::LaibraryError;
-use crate::languages::rust::types::RustSymbol;
+use crate::languages::rust::types::{RustFile, RustSymbol};
 use crate::types::Symbol;
 use tree_sitter::{Node, Parser};
 
-pub fn parse_rust_file(
-    content: &str,
-    parser: &mut Parser,
-) -> Result<Vec<RustSymbol>, LaibraryError> {
+pub fn parse_rust_file(content: &str, parser: &mut Parser) -> Result<RustFile, LaibraryError> {
     let tree = parser
         .parse(content, None)
         .ok_or_else(|| LaibraryError::Parse("Failed to parse source file".to_string()))?;
 
-    extract_symbols_from_module(tree.root_node(), content)
+    let doc_comment = extract_inner_doc_comments(&tree.root_node(), content)?;
+    let symbols = extract_symbols_from_module(tree.root_node(), content)?;
+    Ok(RustFile {
+        doc_comment,
+        symbols,
+    })
 }
 
 fn extract_symbols_from_module(
@@ -168,6 +170,37 @@ fn extract_symbols_from_module(
     }
 
     Ok(symbols)
+}
+
+fn extract_inner_doc_comments(
+    node: &Node,
+    source_code: &str,
+) -> Result<Option<String>, LaibraryError> {
+    let mut doc_comment = String::new();
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.kind() == "line_comment" {
+            let mut comment_cursor = child.walk();
+            let has_inner_doc = child
+                .children(&mut comment_cursor)
+                .any(|c| c.kind() == "inner_doc_comment_marker");
+            if has_inner_doc {
+                let comment_text = child
+                    .utf8_text(source_code.as_bytes())
+                    .map_err(|e| LaibraryError::Parse(e.to_string()))?;
+                doc_comment.push_str(comment_text);
+            } else {
+                break;
+            }
+        } else {
+            break;
+        }
+    }
+    Ok(if doc_comment.is_empty() {
+        None
+    } else {
+        Some(doc_comment)
+    })
 }
 
 fn extract_outer_doc_comments(
@@ -334,9 +367,9 @@ mod tests {
         let source_code = "";
         let mut parser = setup_parser();
 
-        let symbols = parse_rust_file(source_code, &mut parser).unwrap();
+        let rust_file = parse_rust_file(source_code, &mut parser).unwrap();
 
-        assert!(symbols.is_empty());
+        assert!(rust_file.symbols.is_empty());
     }
 
     #[test]
@@ -361,9 +394,9 @@ pub fn test_function() -> i32 {
 "#;
             let mut parser = setup_parser();
 
-            let symbols = parse_rust_file(source_code, &mut parser).unwrap();
+            let rust_file = parse_rust_file(source_code, &mut parser).unwrap();
 
-            let symbol = get_rust_symbol(&symbols, "test_function").unwrap();
+            let symbol = get_rust_symbol(&rust_file.symbols, "test_function").unwrap();
             assert_eq!(symbol.source_code, "pub fn test_function() -> i32;");
         }
 
@@ -378,9 +411,9 @@ pub trait TestTrait {
 "#;
             let mut parser = setup_parser();
 
-            let symbols = parse_rust_file(source_code, &mut parser).unwrap();
+            let rust_file = parse_rust_file(source_code, &mut parser).unwrap();
 
-            let symbol = get_rust_symbol(&symbols, "TestTrait").unwrap();
+            let symbol = get_rust_symbol(&rust_file.symbols, "TestTrait").unwrap();
             assert_contains!(symbol.source_code, "pub fn test_method(&self) -> i32;");
         }
     }
@@ -396,9 +429,9 @@ pub fn public_function() -> () {}
 "#;
             let mut parser = setup_parser();
 
-            let symbols = parse_rust_file(source_code, &mut parser).unwrap();
+            let rust_file = parse_rust_file(source_code, &mut parser).unwrap();
 
-            assert!(get_rust_symbol(&symbols, "private_function").is_none());
+            assert!(get_rust_symbol(&rust_file.symbols, "private_function").is_none());
         }
 
         #[test]
@@ -408,9 +441,9 @@ pub(crate) fn crate_function() {}
 "#;
             let mut parser = setup_parser();
 
-            let symbols = parse_rust_file(source_code, &mut parser).unwrap();
+            let rust_file = parse_rust_file(source_code, &mut parser).unwrap();
 
-            assert!(get_rust_symbol(&symbols, "crate_function").is_some());
+            assert!(get_rust_symbol(&rust_file.symbols, "crate_function").is_some());
         }
 
         #[test]
@@ -420,9 +453,75 @@ pub(super) fn super_function() {}
 "#;
             let mut parser = setup_parser();
 
-            let symbols = parse_rust_file(source_code, &mut parser).unwrap();
+            let rust_file = parse_rust_file(source_code, &mut parser).unwrap();
 
-            assert!(get_rust_symbol(&symbols, "super_function").is_some());
+            assert!(get_rust_symbol(&rust_file.symbols, "super_function").is_some());
+        }
+    }
+
+    mod file_doc_comments {
+        use super::*;
+
+        #[test]
+        fn no_doc_comment() {
+            let source_code = r#"
+pub struct Test {}
+"#;
+            let mut parser = setup_parser();
+
+            let rust_file = parse_rust_file(source_code, &mut parser).unwrap();
+
+            assert!(rust_file.doc_comment.is_none());
+        }
+
+        #[test]
+        fn single_line_doc_comment() {
+            let source_code = r#"
+//! This is a file-level doc comment
+pub struct Test {}
+"#;
+            let mut parser = setup_parser();
+
+            let rust_file = parse_rust_file(source_code, &mut parser).unwrap();
+
+            assert_eq!(
+                rust_file.doc_comment,
+                Some("//! This is a file-level doc comment\n".to_string())
+            );
+        }
+
+        #[test]
+        fn multiline_doc_comment() {
+            let source_code = r#"
+//! This is a file-level doc comment
+//! It spans multiple lines
+
+pub struct Test {}
+"#;
+            let mut parser = setup_parser();
+
+            let rust_file = parse_rust_file(source_code, &mut parser).unwrap();
+
+            assert_eq!(
+                rust_file.doc_comment,
+                Some(
+                    "//! This is a file-level doc comment\n//! It spans multiple lines\n"
+                        .to_string()
+                )
+            );
+        }
+
+        #[test]
+        fn regular_comment_not_doc_comment() {
+            let source_code = r#"
+// This is a regular comment
+pub struct Test {}
+"#;
+            let mut parser = setup_parser();
+
+            let rust_file = parse_rust_file(source_code, &mut parser).unwrap();
+
+            assert!(rust_file.doc_comment.is_none());
         }
     }
 
@@ -436,9 +535,9 @@ pub struct Test {}
 "#;
             let mut parser = setup_parser();
 
-            let symbols = parse_rust_file(source_code, &mut parser).unwrap();
+            let rust_file = parse_rust_file(source_code, &mut parser).unwrap();
 
-            let symbol = get_rust_symbol(&symbols, "Test").unwrap();
+            let symbol = get_rust_symbol(&rust_file.symbols, "Test").unwrap();
             assert_eq!(symbol.source_code, "pub struct Test {}");
         }
 
@@ -450,9 +549,9 @@ pub struct Test {}
 "#;
             let mut parser = setup_parser();
 
-            let symbols = parse_rust_file(source_code, &mut parser).unwrap();
+            let rust_file = parse_rust_file(source_code, &mut parser).unwrap();
 
-            let symbol = get_rust_symbol(&symbols, "Test").unwrap();
+            let symbol = get_rust_symbol(&rust_file.symbols, "Test").unwrap();
             assert_eq!(
                 symbol.source_code,
                 "/// A documented item\npub struct Test {}"
@@ -468,9 +567,9 @@ pub struct Test {}
 "#;
             let mut parser = setup_parser();
 
-            let symbols = parse_rust_file(source_code, &mut parser).unwrap();
+            let rust_file = parse_rust_file(source_code, &mut parser).unwrap();
 
-            let symbol = get_rust_symbol(&symbols, "Test").unwrap();
+            let symbol = get_rust_symbol(&rust_file.symbols, "Test").unwrap();
             assert_starts_with!(symbol.source_code, "/// First line\n/// Second line\n");
         }
 
@@ -483,9 +582,9 @@ pub struct Test {}
 "#;
             let mut parser = setup_parser();
 
-            let symbols = parse_rust_file(source_code, &mut parser).unwrap();
+            let rust_file = parse_rust_file(source_code, &mut parser).unwrap();
 
-            let symbol = get_rust_symbol(&symbols, "Test").unwrap();
+            let symbol = get_rust_symbol(&rust_file.symbols, "Test").unwrap();
             assert_starts_with!(symbol.source_code, "pub struct Test");
         }
 
@@ -498,9 +597,9 @@ pub struct Test {}
 "#;
             let mut parser = setup_parser();
 
-            let symbols = parse_rust_file(source_code, &mut parser).unwrap();
+            let rust_file = parse_rust_file(source_code, &mut parser).unwrap();
 
-            let symbol = get_rust_symbol(&symbols, "Test").unwrap();
+            let symbol = get_rust_symbol(&rust_file.symbols, "Test").unwrap();
             assert_starts_with!(symbol.source_code, "pub struct Test");
         }
 
@@ -515,9 +614,9 @@ pub struct Test {}
 "#;
             let mut parser = setup_parser();
 
-            let symbols = parse_rust_file(source_code, &mut parser).unwrap();
+            let rust_file = parse_rust_file(source_code, &mut parser).unwrap();
 
-            let symbol = get_rust_symbol(&symbols, "Test").unwrap();
+            let symbol = get_rust_symbol(&rust_file.symbols, "Test").unwrap();
             assert_starts_with!(symbol.source_code, "/** A block doc comment\n * with multiple lines\n * and some indentation\n */\npub struct Test");
         }
 
@@ -532,9 +631,9 @@ pub struct Test {}
 "#;
             let mut parser = setup_parser();
 
-            let symbols = parse_rust_file(source_code, &mut parser).unwrap();
+            let rust_file = parse_rust_file(source_code, &mut parser).unwrap();
 
-            let symbol = get_rust_symbol(&symbols, "Test").unwrap();
+            let symbol = get_rust_symbol(&rust_file.symbols, "Test").unwrap();
             assert_starts_with!(symbol.source_code, "/// This is the struct's doc\n");
         }
 
@@ -549,9 +648,9 @@ pub struct SecondStruct {}
 "#;
             let mut parser = setup_parser();
 
-            let symbols = parse_rust_file(source_code, &mut parser).unwrap();
+            let rust_file = parse_rust_file(source_code, &mut parser).unwrap();
 
-            let symbol = get_rust_symbol(&symbols, "SecondStruct").unwrap();
+            let symbol = get_rust_symbol(&rust_file.symbols, "SecondStruct").unwrap();
             assert_starts_with!(symbol.source_code, "/// Second struct's doc\n");
         }
 
@@ -566,9 +665,9 @@ pub struct Test {}
 "#;
             let mut parser = setup_parser();
 
-            let symbols = parse_rust_file(source_code, &mut parser).unwrap();
+            let rust_file = parse_rust_file(source_code, &mut parser).unwrap();
 
-            let symbol = get_rust_symbol(&symbols, "Test").unwrap();
+            let symbol = get_rust_symbol(&rust_file.symbols, "Test").unwrap();
             assert_starts_with!(
                 symbol.source_code,
                 "/** This block comment\n * should be returned\n */\n"
@@ -585,9 +684,9 @@ pub fn test_function() -> i32 {
 "#;
             let mut parser = setup_parser();
 
-            let symbols = parse_rust_file(source_code, &mut parser).unwrap();
+            let rust_file = parse_rust_file(source_code, &mut parser).unwrap();
 
-            let symbol = get_rust_symbol(&symbols, "test_function").unwrap();
+            let symbol = get_rust_symbol(&rust_file.symbols, "test_function").unwrap();
             assert_starts_with!(symbol.source_code, "/// A documented function\n");
         }
 
@@ -601,9 +700,9 @@ pub struct TestStruct {
 "#;
             let mut parser = setup_parser();
 
-            let symbols = parse_rust_file(source_code, &mut parser).unwrap();
+            let rust_file = parse_rust_file(source_code, &mut parser).unwrap();
 
-            let symbol = get_rust_symbol(&symbols, "TestStruct").unwrap();
+            let symbol = get_rust_symbol(&rust_file.symbols, "TestStruct").unwrap();
             assert_starts_with!(symbol.source_code, "/// A documented struct\n");
         }
 
@@ -618,9 +717,9 @@ pub enum TestEnum {
 "#;
             let mut parser = setup_parser();
 
-            let symbols = parse_rust_file(source_code, &mut parser).unwrap();
+            let rust_file = parse_rust_file(source_code, &mut parser).unwrap();
 
-            let symbol = get_rust_symbol(&symbols, "TestEnum").unwrap();
+            let symbol = get_rust_symbol(&rust_file.symbols, "TestEnum").unwrap();
             assert_starts_with!(symbol.source_code, "/// A documented enum\n");
         }
 
@@ -634,9 +733,9 @@ pub trait TestTrait {
 "#;
             let mut parser = setup_parser();
 
-            let symbols = parse_rust_file(source_code, &mut parser).unwrap();
+            let rust_file = parse_rust_file(source_code, &mut parser).unwrap();
 
-            let symbol = get_rust_symbol(&symbols, "TestTrait").unwrap();
+            let symbol = get_rust_symbol(&rust_file.symbols, "TestTrait").unwrap();
             assert_starts_with!(symbol.source_code, "/// A documented trait\n");
         }
 
@@ -652,9 +751,9 @@ pub trait TestTrait {
 "#;
             let mut parser = setup_parser();
 
-            let symbols = parse_rust_file(source_code, &mut parser).unwrap();
+            let rust_file = parse_rust_file(source_code, &mut parser).unwrap();
 
-            let symbol = get_rust_symbol(&symbols, "TestTrait").unwrap();
+            let symbol = get_rust_symbol(&rust_file.symbols, "TestTrait").unwrap();
             assert_contains!(
                 symbol.source_code,
                 "/// A documented method\n    pub fn test_method(&self) -> i32;"
@@ -674,9 +773,9 @@ pub mod inner {
 "#;
             let mut parser = setup_parser();
 
-            let symbols = parse_rust_file(source_code, &mut parser).unwrap();
+            let rust_file = parse_rust_file(source_code, &mut parser).unwrap();
 
-            let inner_content = get_inner_module("inner", &symbols).unwrap();
+            let inner_content = get_inner_module("inner", &rust_file.symbols).unwrap();
             let symbol = get_rust_symbol(inner_content, "nested_function").unwrap();
             assert_eq!(symbol.name, "nested_function");
         }
@@ -690,9 +789,12 @@ mod private {
 "#;
             let mut parser = setup_parser();
 
-            let symbols = parse_rust_file(source_code, &mut parser).unwrap();
+            let rust_file = parse_rust_file(source_code, &mut parser).unwrap();
 
-            assert!(symbols.is_empty(), "Private modules should be ignored");
+            assert!(
+                rust_file.symbols.is_empty(),
+                "Private modules should be ignored"
+            );
         }
 
         #[test]
@@ -702,10 +804,10 @@ pub mod empty {}
 "#;
             let mut parser = setup_parser();
 
-            let symbols = parse_rust_file(source_code, &mut parser).unwrap();
+            let rust_file = parse_rust_file(source_code, &mut parser).unwrap();
 
-            let empty_content = get_inner_module("empty", &symbols).unwrap();
-            assert_eq!(symbols.len(), 1);
+            let empty_content = get_inner_module("empty", &rust_file.symbols).unwrap();
+            assert_eq!(rust_file.symbols.len(), 1);
             assert!(empty_content.is_empty());
         }
 
@@ -724,11 +826,11 @@ pub mod inner {
 "#;
             let mut parser = setup_parser();
 
-            let symbols = parse_rust_file(source_code, &mut parser).unwrap();
+            let rust_file = parse_rust_file(source_code, &mut parser).unwrap();
 
-            assert_eq!(symbols.len(), 1);
+            assert_eq!(rust_file.symbols.len(), 1);
             let inner_content =
-                get_inner_module("inner", &symbols).expect("Should find inner module");
+                get_inner_module("inner", &rust_file.symbols).expect("Should find inner module");
             assert_eq!(inner_content.len(), 2);
             let inner_struct =
                 get_rust_symbol(inner_content, "InnerStruct").expect("Should find InnerStruct");
@@ -748,9 +850,9 @@ pub mod other;
 "#;
             let mut parser = setup_parser();
 
-            let symbols = parse_rust_file(source_code, &mut parser).unwrap();
+            let rust_file = parse_rust_file(source_code, &mut parser).unwrap();
 
-            let symbol = match &symbols[0] {
+            let symbol = match &rust_file.symbols[0] {
                 RustSymbol::ModuleDeclaration { name, .. } => name,
                 _ => panic!("Expected ModuleDeclaration variant"),
             };
@@ -768,10 +870,10 @@ pub use inner::Format;
 "#;
             let mut parser = setup_parser();
 
-            let symbols = parse_rust_file(source_code, &mut parser).unwrap();
+            let rust_file = parse_rust_file(source_code, &mut parser).unwrap();
 
-            assert_eq!(symbols.len(), 1);
-            match &symbols[0] {
+            assert_eq!(rust_file.symbols.len(), 1);
+            match &rust_file.symbols[0] {
                 RustSymbol::SymbolReexport {
                     name, source_path, ..
                 } => {
@@ -789,13 +891,13 @@ pub use inner::{TextFormatter, OtherType};
 "#;
             let mut parser = setup_parser();
 
-            let symbols = parse_rust_file(source_code, &mut parser).unwrap();
+            let rust_file = parse_rust_file(source_code, &mut parser).unwrap();
 
-            assert_eq!(symbols.len(), 2);
+            assert_eq!(rust_file.symbols.len(), 2);
             let mut found_text_formatter = false;
             let mut found_other_type = false;
 
-            for symbol in &symbols {
+            for symbol in &rust_file.symbols {
                 match symbol {
                     RustSymbol::SymbolReexport {
                         name, source_path, ..
@@ -829,10 +931,10 @@ pub mod test_module;
 "#;
             let mut parser = setup_parser();
 
-            let symbols = parse_rust_file(source_code, &mut parser).unwrap();
+            let rust_file = parse_rust_file(source_code, &mut parser).unwrap();
 
-            assert_eq!(symbols.len(), 1);
-            match &symbols[0] {
+            assert_eq!(rust_file.symbols.len(), 1);
+            match &rust_file.symbols[0] {
                 RustSymbol::ModuleDeclaration { name, is_public } => {
                     assert_eq!(name, "test_module");
                     assert!(is_public);
@@ -848,10 +950,10 @@ mod test_module;
 "#;
             let mut parser = setup_parser();
 
-            let symbols = parse_rust_file(source_code, &mut parser).unwrap();
+            let rust_file = parse_rust_file(source_code, &mut parser).unwrap();
 
-            assert_eq!(symbols.len(), 1);
-            match &symbols[0] {
+            assert_eq!(rust_file.symbols.len(), 1);
+            match &rust_file.symbols[0] {
                 RustSymbol::ModuleDeclaration { name, is_public } => {
                     assert_eq!(name, "test_module");
                     assert!(!is_public);

@@ -13,8 +13,8 @@ pub fn build_public_api(
     parser: &mut Parser,
 ) -> Result<Vec<Namespace>, LaibraryError> {
     let raw_namespaces = collect_symbols(entry_point, parser)?;
-    let resolved_symbols = resolve_symbols(&raw_namespaces)?;
-    let namespaces = construct_namespaces(&resolved_symbols, crate_name);
+    let resolution = resolve_symbols(&raw_namespaces)?;
+    let namespaces = construct_namespaces(resolution, crate_name);
     Ok(namespaces)
 }
 

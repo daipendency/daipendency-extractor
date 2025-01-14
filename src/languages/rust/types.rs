@@ -1,6 +1,12 @@
 use crate::types::Symbol;
 
 #[derive(Debug, Clone)]
+pub struct RustFile {
+    pub doc_comment: Option<String>,
+    pub symbols: Vec<RustSymbol>,
+}
+
+#[derive(Debug, Clone)]
 pub enum RustSymbol {
     Symbol {
         symbol: Symbol,

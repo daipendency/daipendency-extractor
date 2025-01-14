@@ -10,13 +10,18 @@ pub struct ResolvedSymbol {
     pub modules: Vec<String>,
 }
 
+#[derive(Debug)]
+pub struct SymbolResolution {
+    pub symbols: Vec<ResolvedSymbol>,
+    pub doc_comments: HashMap<String, String>,
+}
+
 /// Resolve symbol references by matching them with their corresponding definitions.
-pub fn resolve_symbols(
-    raw_namespaces: &[RawNamespace],
-) -> Result<Vec<ResolvedSymbol>, LaibraryError> {
+pub fn resolve_symbols(raw_namespaces: &[RawNamespace]) -> Result<SymbolResolution, LaibraryError> {
     let mut symbol_map: HashMap<String, Symbol> = HashMap::new();
     let mut reference_map: HashMap<String, String> = HashMap::new();
     let mut resolved_symbols = Vec::new();
+    let mut doc_comments = HashMap::new();
     let mut public_namespaces = std::collections::HashSet::new();
 
     // First pass: collect all symbol definitions and references
@@ -24,6 +29,13 @@ pub fn resolve_symbols(
         // The root namespace and public modules are public
         if namespace.name.is_empty() || namespace.is_public {
             public_namespaces.insert(namespace.name.clone());
+        }
+
+        // Collect doc comments for public namespaces
+        if let Some(doc_comment) = &namespace.doc_comment {
+            if namespace.is_public {
+                doc_comments.insert(namespace.name.clone(), doc_comment.clone());
+            }
         }
 
         for symbol in &namespace.definitions {
@@ -89,7 +101,10 @@ pub fn resolve_symbols(
         }
     }
 
-    Ok(resolved_symbols)
+    Ok(SymbolResolution {
+        symbols: resolved_symbols,
+        doc_comments,
+    })
 }
 
 fn resolve_reference<'a>(
@@ -133,12 +148,13 @@ mod tests {
             }],
             references: Vec::new(),
             is_public: true,
+            doc_comment: None,
         }];
 
-        let resolved = resolve_symbols(&raw_namespaces).unwrap();
-        assert_eq!(resolved.len(), 1);
-        assert_eq!(resolved[0].symbol.name, "test");
-        assert_eq!(resolved[0].modules.len(), 0);
+        let resolution = resolve_symbols(&raw_namespaces).unwrap();
+        assert_eq!(resolution.symbols.len(), 1);
+        assert_eq!(resolution.symbols[0].symbol.name, "test");
+        assert_eq!(resolution.symbols[0].modules.len(), 0);
     }
 
     #[test]
@@ -149,6 +165,7 @@ mod tests {
                 definitions: Vec::new(),
                 references: vec![("test".to_string(), "inner::test".to_string())],
                 is_public: true,
+                doc_comment: None,
             },
             RawNamespace {
                 name: "inner".to_string(),
@@ -158,16 +175,22 @@ mod tests {
                 }],
                 references: Vec::new(),
                 is_public: true,
+                doc_comment: None,
             },
         ];
 
-        let resolved = resolve_symbols(&raw_namespaces).unwrap();
-        assert_eq!(resolved.len(), 2);
+        let resolution = resolve_symbols(&raw_namespaces).unwrap();
+        assert_eq!(resolution.symbols.len(), 2);
 
-        let root_symbol = resolved.iter().find(|s| s.modules.is_empty()).unwrap();
+        let root_symbol = resolution
+            .symbols
+            .iter()
+            .find(|s| s.modules.is_empty())
+            .unwrap();
         assert_eq!(root_symbol.symbol.name, "test");
 
-        let inner_symbol = resolved
+        let inner_symbol = resolution
+            .symbols
             .iter()
             .find(|s| s.modules == vec!["inner"])
             .unwrap();
@@ -181,6 +204,7 @@ mod tests {
             definitions: Vec::new(),
             references: vec![("test".to_string(), "missing::test".to_string())],
             is_public: true,
+            doc_comment: None,
         }];
 
         let result = resolve_symbols(&raw_namespaces);
@@ -195,6 +219,7 @@ mod tests {
                 definitions: Vec::new(),
                 references: vec![("Format".to_string(), "formatting::Format".to_string())],
                 is_public: true,
+                doc_comment: None,
             },
             RawNamespace {
                 name: "formatting".to_string(),
@@ -204,6 +229,7 @@ mod tests {
                     "formatting::format::Format".to_string(),
                 )],
                 is_public: true,
+                doc_comment: None,
             },
             RawNamespace {
                 name: "formatting::format".to_string(),
@@ -213,20 +239,26 @@ mod tests {
                 }],
                 references: Vec::new(),
                 is_public: true,
+                doc_comment: None,
             },
         ];
 
-        let resolved = resolve_symbols(&raw_namespaces).unwrap();
-        assert_eq!(resolved.len(), 3);
+        let resolution = resolve_symbols(&raw_namespaces).unwrap();
+        assert_eq!(resolution.symbols.len(), 3);
 
-        let root_symbol = resolved.iter().find(|s| s.modules.is_empty()).unwrap();
+        let root_symbol = resolution
+            .symbols
+            .iter()
+            .find(|s| s.modules.is_empty())
+            .unwrap();
         assert_eq!(root_symbol.symbol.name, "Format");
         assert!(root_symbol
             .symbol
             .source_code
             .contains("pub enum Format { Markdown, Html, Plain }"));
 
-        let formatting_symbol = resolved
+        let formatting_symbol = resolution
+            .symbols
             .iter()
             .find(|s| s.modules == vec!["formatting"])
             .unwrap();
@@ -236,7 +268,8 @@ mod tests {
             .source_code
             .contains("pub enum Format { Markdown, Html, Plain }"));
 
-        let format_symbol = resolved
+        let format_symbol = resolution
+            .symbols
             .iter()
             .find(|s| s.modules == vec!["formatting", "format"])
             .unwrap();
@@ -261,6 +294,7 @@ mod tests {
                     ),
                 ],
                 is_public: true,
+                doc_comment: None,
             },
             RawNamespace {
                 name: "text".to_string(),
@@ -273,6 +307,7 @@ mod tests {
                     ),
                 ],
                 is_public: true,
+                doc_comment: None,
             },
             RawNamespace {
                 name: "text::formatter".to_string(),
@@ -288,14 +323,19 @@ mod tests {
                 ],
                 references: Vec::new(),
                 is_public: true,
+                doc_comment: None,
             },
         ];
 
-        let resolved = resolve_symbols(&raw_namespaces).unwrap();
-        assert_eq!(resolved.len(), 6);
+        let resolution = resolve_symbols(&raw_namespaces).unwrap();
+        assert_eq!(resolution.symbols.len(), 6);
 
         // Root namespace
-        let root_symbols: Vec<_> = resolved.iter().filter(|s| s.modules.is_empty()).collect();
+        let root_symbols: Vec<_> = resolution
+            .symbols
+            .iter()
+            .filter(|s| s.modules.is_empty())
+            .collect();
         assert_eq!(root_symbols.len(), 2);
         assert!(
             root_symbols
@@ -307,7 +347,8 @@ mod tests {
             && s.symbol.source_code.contains("pub struct TextFormatter")));
 
         // Text namespace
-        let text_symbols: Vec<_> = resolved
+        let text_symbols: Vec<_> = resolution
+            .symbols
             .iter()
             .filter(|s| s.modules == vec!["text"])
             .collect();
@@ -322,7 +363,8 @@ mod tests {
             && s.symbol.source_code.contains("pub struct TextFormatter")));
 
         // Formatter namespace
-        let formatter_symbols: Vec<_> = resolved
+        let formatter_symbols: Vec<_> = resolution
+            .symbols
             .iter()
             .filter(|s| s.modules == vec!["text", "formatter"])
             .collect();
@@ -347,18 +389,21 @@ mod tests {
                 definitions: Vec::new(),
                 references: vec![("test".to_string(), "a::test".to_string())],
                 is_public: true,
+                doc_comment: None,
             },
             RawNamespace {
                 name: "a".to_string(),
                 definitions: Vec::new(),
                 references: vec![("test".to_string(), "b::test".to_string())],
                 is_public: true,
+                doc_comment: None,
             },
             RawNamespace {
                 name: "b".to_string(),
                 definitions: Vec::new(),
                 references: vec![("test".to_string(), "a::test".to_string())],
                 is_public: true,
+                doc_comment: None,
             },
         ];
 
@@ -374,6 +419,7 @@ mod tests {
                 definitions: Vec::new(),
                 references: Vec::new(),
                 is_public: true,
+                doc_comment: None,
             },
             RawNamespace {
                 name: "text".to_string(),
@@ -386,6 +432,7 @@ mod tests {
                     ),
                 ],
                 is_public: true,
+                doc_comment: None,
             },
             RawNamespace {
                 name: "text::formatter".to_string(),
@@ -401,13 +448,15 @@ mod tests {
                 ],
                 references: Vec::new(),
                 is_public: false,
+                doc_comment: None,
             },
         ];
 
-        let resolved = resolve_symbols(&raw_namespaces).unwrap();
+        let resolution = resolve_symbols(&raw_namespaces).unwrap();
 
         // We should have symbols in both the root and text namespaces
-        let text_symbols: Vec<_> = resolved
+        let text_symbols: Vec<_> = resolution
+            .symbols
             .iter()
             .filter(|s| s.modules == vec!["text"])
             .collect();
@@ -418,8 +467,41 @@ mod tests {
             .any(|s| s.symbol.name == "TextFormatter"));
 
         // The formatter module's symbols should not appear in their original location
-        assert!(!resolved
+        assert!(!resolution
+            .symbols
             .iter()
             .any(|s| s.modules == vec!["text", "formatter"]));
+    }
+
+    #[test]
+    fn test_resolve_symbols_without_doc_comment() {
+        let raw_namespaces = vec![RawNamespace {
+            name: "text".to_string(),
+            definitions: vec![],
+            references: vec![],
+            is_public: true,
+            doc_comment: None,
+        }];
+
+        let resolution = resolve_symbols(&raw_namespaces).unwrap();
+        assert!(resolution.doc_comments.is_empty());
+    }
+
+    #[test]
+    fn test_resolve_symbols_with_doc_comment() {
+        let raw_namespaces = vec![RawNamespace {
+            name: "text".to_string(),
+            definitions: vec![],
+            references: vec![],
+            is_public: true,
+            doc_comment: Some("Module for text processing".to_string()),
+        }];
+
+        let resolution = resolve_symbols(&raw_namespaces).unwrap();
+        assert_eq!(resolution.doc_comments.len(), 1);
+        assert_eq!(
+            resolution.doc_comments.get("text"),
+            Some(&"Module for text processing".to_string())
+        );
     }
 }

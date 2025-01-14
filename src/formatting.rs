@@ -38,13 +38,20 @@ fn format_namespace_content(namespace: &Namespace, language: &str) -> String {
     let mut content = format!("## {}\n\n", namespace.name);
 
     if !namespace.symbols.is_empty() {
-        let symbols_formatted = namespace
-            .symbols
-            .iter()
-            .map(|s| s.source_code.as_str())
-            .collect::<Vec<_>>()
-            .join("\n\n");
-        content.push_str(&format!("```{}\n{}\n```\n", language, symbols_formatted));
+        let mut code_block = String::new();
+        if let Some(doc) = &namespace.doc_comment {
+            code_block.push_str(doc);
+            code_block.push_str("\n");
+        }
+        code_block.push_str(
+            &namespace
+                .symbols
+                .iter()
+                .map(|s| s.source_code.as_str())
+                .collect::<Vec<_>>()
+                .join("\n\n"),
+        );
+        content.push_str(&format!("```{}\n{}\n```\n", language, code_block));
     }
 
     if !namespace.missing_symbols.is_empty() {
@@ -138,16 +145,19 @@ mod tests {
 
         const STUB_SOURCE_CODE: &str = "SOURCE_CODE";
         const STUB_MULTI_LINE_SOURCE_CODE: &str = "MULTI_LINE\nSOURCE_CODE";
+        const STUB_DOC_COMMENT: &str = "This is a doc comment";
 
         fn create_namespace(
             name: &str,
             symbols: Vec<Symbol>,
             missing_symbols: Vec<Symbol>,
+            doc_comment: Option<&str>,
         ) -> Namespace {
             Namespace {
                 name: name.to_string(),
                 symbols,
                 missing_symbols,
+                doc_comment: doc_comment.map(String::from),
             }
         }
 
@@ -176,7 +186,7 @@ mod tests {
         #[test]
         fn single_namespace() {
             let symbol = create_symbol("symbol", STUB_SOURCE_CODE);
-            let namespace = create_namespace("test", vec![symbol], vec![]);
+            let namespace = create_namespace("test", vec![symbol], vec![], None);
             let namespace_name = namespace.name.clone();
 
             let documentation =
@@ -197,11 +207,13 @@ mod tests {
                 "test1",
                 vec![create_symbol("symbol1", STUB_SOURCE_CODE)],
                 vec![],
+                None,
             );
             let namespace2 = create_namespace(
                 "test2",
                 vec![create_symbol("symbol2", STUB_SOURCE_CODE)],
                 vec![],
+                None,
             );
 
             let documentation = format_library_context(
@@ -226,7 +238,7 @@ mod tests {
 
             #[test]
             fn namespace_without_symbols() {
-                let namespace = create_namespace("test", vec![], vec![]);
+                let namespace = create_namespace("test", vec![], vec![], None);
                 let documentation =
                     format_library_context(&create_metadata(), &[namespace], STUB_LANGUAGE)
                         .unwrap();
@@ -239,6 +251,7 @@ mod tests {
                     "test",
                     vec![create_symbol("symbol", STUB_SOURCE_CODE)],
                     vec![],
+                    None,
                 );
 
                 let documentation =
@@ -259,6 +272,7 @@ mod tests {
                         create_symbol("symbol2", "SECOND"),
                     ],
                     vec![],
+                    None,
                 );
 
                 let documentation =
@@ -276,6 +290,7 @@ mod tests {
                     "test",
                     vec![create_symbol("symbol", STUB_SOURCE_CODE)],
                     vec![],
+                    None,
                 );
 
                 let documentation =
@@ -293,6 +308,7 @@ mod tests {
                     "test",
                     vec![create_symbol("symbol", STUB_MULTI_LINE_SOURCE_CODE)],
                     vec![],
+                    None,
                 );
 
                 let documentation =
@@ -310,6 +326,7 @@ mod tests {
                     "test",
                     vec![],
                     vec![create_symbol("missing", "pub fn missing() {}")],
+                    None,
                 );
 
                 let documentation =
@@ -326,6 +343,7 @@ mod tests {
                     "test",
                     vec![create_symbol("present", "pub fn present() {}")],
                     vec![create_symbol("missing", "pub fn missing() {}")],
+                    None,
                 );
 
                 let documentation =
@@ -336,6 +354,47 @@ mod tests {
                 assert_contains!(documentation, "pub fn present()");
                 assert_contains!(documentation, "### Missing Symbols\n\n");
                 assert_contains!(documentation, "```text\n- missing\n```");
+            }
+
+            #[test]
+            fn namespace_without_doc_comment() {
+                let namespace = create_namespace(
+                    "test",
+                    vec![create_symbol("symbol", STUB_SOURCE_CODE)],
+                    vec![],
+                    None,
+                );
+
+                let documentation =
+                    format_library_context(&create_metadata(), &[namespace], STUB_LANGUAGE)
+                        .unwrap();
+
+                assert_contains!(
+                    documentation,
+                    &format!("```{}\n{}\n```", STUB_LANGUAGE, STUB_SOURCE_CODE)
+                );
+            }
+
+            #[test]
+            fn namespace_with_doc_comment() {
+                let namespace = create_namespace(
+                    "test",
+                    vec![create_symbol("symbol", STUB_SOURCE_CODE)],
+                    vec![],
+                    Some(STUB_DOC_COMMENT),
+                );
+
+                let documentation =
+                    format_library_context(&create_metadata(), &[namespace], STUB_LANGUAGE)
+                        .unwrap();
+
+                assert_contains!(
+                    documentation,
+                    &format!(
+                        "```{}\n{}\n{}\n```",
+                        STUB_LANGUAGE, STUB_DOC_COMMENT, STUB_SOURCE_CODE
+                    )
+                );
             }
         }
     }

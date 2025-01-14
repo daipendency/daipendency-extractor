@@ -1,10 +1,10 @@
-use super::symbol_resolution::ResolvedSymbol;
+use super::symbol_resolution::SymbolResolution;
 use crate::types::Namespace;
 use std::collections::HashMap;
 
 /// Construct the final namespace hierarchy using the resolved symbols.
 pub fn construct_namespaces(
-    resolved_symbols: &[ResolvedSymbol],
+    symbol_resolution: SymbolResolution,
     crate_name: &str,
 ) -> Vec<Namespace> {
     let mut namespace_map: HashMap<String, Namespace> = HashMap::new();
@@ -16,11 +16,12 @@ pub fn construct_namespaces(
             name: crate_name.to_string(),
             symbols: Vec::new(),
             missing_symbols: Vec::new(),
+            doc_comment: symbol_resolution.doc_comments.get("").cloned(),
         },
     );
 
     // Group symbols by namespace
-    for resolved_symbol in resolved_symbols {
+    for resolved_symbol in symbol_resolution.symbols {
         let namespace_path = resolved_symbol.modules.join("::");
         let namespace_name = if namespace_path.is_empty() {
             crate_name.to_string()
@@ -29,11 +30,12 @@ pub fn construct_namespaces(
         };
 
         let namespace = namespace_map
-            .entry(namespace_path)
+            .entry(namespace_path.clone())
             .or_insert_with(|| Namespace {
                 name: namespace_name,
                 symbols: Vec::new(),
                 missing_symbols: Vec::new(),
+                doc_comment: symbol_resolution.doc_comments.get(&namespace_path).cloned(),
             });
 
         namespace.symbols.push(resolved_symbol.symbol.clone());
@@ -45,6 +47,7 @@ pub fn construct_namespaces(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::languages::rust::symbol_resolution::ResolvedSymbol;
     use crate::types::Symbol;
 
     const STUB_CRATE_NAME: &str = "test_crate";
@@ -59,11 +62,109 @@ mod tests {
             modules: Vec::new(),
         }];
 
-        let namespaces = construct_namespaces(&resolved_symbols, STUB_CRATE_NAME);
+        let namespaces = construct_namespaces(
+            SymbolResolution {
+                symbols: resolved_symbols,
+                doc_comments: HashMap::new(),
+            },
+            STUB_CRATE_NAME,
+        );
         assert_eq!(namespaces.len(), 1);
         assert_eq!(namespaces[0].name, STUB_CRATE_NAME);
         assert_eq!(namespaces[0].symbols.len(), 1);
         assert_eq!(namespaces[0].symbols[0].name, "test");
+    }
+
+    mod doc_comments {
+        use super::*;
+
+        #[test]
+        fn test_construct_namespaces_without_doc_comment() {
+            let resolved_symbols = vec![ResolvedSymbol {
+                symbol: Symbol {
+                    name: "Format".to_string(),
+                    source_code: "pub enum Format { Plain, Rich }".to_string(),
+                },
+                modules: vec!["text".to_string()],
+            }];
+
+            let namespaces = construct_namespaces(
+                SymbolResolution {
+                    symbols: resolved_symbols,
+                    doc_comments: HashMap::new(),
+                },
+                STUB_CRATE_NAME,
+            );
+
+            let text_namespace = namespaces
+                .iter()
+                .find(|n| n.name == format!("{}::text", STUB_CRATE_NAME))
+                .unwrap();
+            assert_eq!(text_namespace.doc_comment, None);
+            assert_eq!(text_namespace.symbols.len(), 1);
+            assert_eq!(text_namespace.symbols[0].name, "Format");
+        }
+
+        #[test]
+        fn test_construct_namespaces_with_doc_comments() {
+            let mut doc_comments = HashMap::new();
+            doc_comments.insert("text".to_string(), "Text processing module".to_string());
+
+            let resolved_symbols = vec![ResolvedSymbol {
+                symbol: Symbol {
+                    name: "Format".to_string(),
+                    source_code: "pub enum Format { Plain, Rich }".to_string(),
+                },
+                modules: vec!["text".to_string()],
+            }];
+
+            let namespaces = construct_namespaces(
+                SymbolResolution {
+                    symbols: resolved_symbols,
+                    doc_comments,
+                },
+                STUB_CRATE_NAME,
+            );
+
+            let text_namespace = namespaces
+                .iter()
+                .find(|n| n.name == format!("{}::text", STUB_CRATE_NAME))
+                .unwrap();
+            assert_eq!(
+                text_namespace.doc_comment.as_deref(),
+                Some("Text processing module")
+            );
+            assert_eq!(text_namespace.symbols.len(), 1);
+            assert_eq!(text_namespace.symbols[0].name, "Format");
+        }
+
+        #[test]
+        fn test_construct_namespaces_root_with_doc_comment() {
+            let mut doc_comments = HashMap::new();
+            doc_comments.insert("".to_string(), "Root module documentation".to_string());
+
+            let resolved_symbols = vec![ResolvedSymbol {
+                symbol: Symbol {
+                    name: "test".to_string(),
+                    source_code: "pub fn test() {}".to_string(),
+                },
+                modules: Vec::new(),
+            }];
+
+            let namespaces = construct_namespaces(
+                SymbolResolution {
+                    symbols: resolved_symbols,
+                    doc_comments,
+                },
+                STUB_CRATE_NAME,
+            );
+            assert_eq!(namespaces.len(), 1);
+            assert_eq!(namespaces[0].name, STUB_CRATE_NAME);
+            assert_eq!(
+                namespaces[0].doc_comment.as_deref(),
+                Some("Root module documentation")
+            );
+        }
     }
 
     #[test]
@@ -85,7 +186,13 @@ mod tests {
             },
         ];
 
-        let namespaces = construct_namespaces(&resolved_symbols, STUB_CRATE_NAME);
+        let namespaces = construct_namespaces(
+            SymbolResolution {
+                symbols: resolved_symbols,
+                doc_comments: HashMap::new(),
+            },
+            STUB_CRATE_NAME,
+        );
         assert_eq!(namespaces.len(), 2);
 
         let root = namespaces
@@ -122,7 +229,13 @@ mod tests {
             },
         ];
 
-        let namespaces = construct_namespaces(&resolved_symbols, STUB_CRATE_NAME);
+        let namespaces = construct_namespaces(
+            SymbolResolution {
+                symbols: resolved_symbols,
+                doc_comments: HashMap::new(),
+            },
+            STUB_CRATE_NAME,
+        );
         assert_eq!(namespaces.len(), 2);
 
         let root = namespaces
@@ -173,7 +286,13 @@ mod tests {
             },
         ];
 
-        let namespaces = construct_namespaces(&resolved_symbols, STUB_CRATE_NAME);
+        let namespaces = construct_namespaces(
+            SymbolResolution {
+                symbols: resolved_symbols,
+                doc_comments: HashMap::new(),
+            },
+            STUB_CRATE_NAME,
+        );
         assert_eq!(namespaces.len(), 2);
 
         let root = namespaces
@@ -219,7 +338,13 @@ mod tests {
             },
         ];
 
-        let namespaces = construct_namespaces(&resolved_symbols, STUB_CRATE_NAME);
+        let namespaces = construct_namespaces(
+            SymbolResolution {
+                symbols: resolved_symbols,
+                doc_comments: HashMap::new(),
+            },
+            STUB_CRATE_NAME,
+        );
         assert_eq!(namespaces.len(), 3);
 
         let root = namespaces
@@ -247,7 +372,13 @@ mod tests {
     #[test]
     fn test_construct_namespaces_empty_input() {
         let resolved_symbols = Vec::new();
-        let namespaces = construct_namespaces(&resolved_symbols, STUB_CRATE_NAME);
+        let namespaces = construct_namespaces(
+            SymbolResolution {
+                symbols: resolved_symbols,
+                doc_comments: HashMap::new(),
+            },
+            STUB_CRATE_NAME,
+        );
         assert_eq!(namespaces.len(), 1);
         assert_eq!(namespaces[0].name, STUB_CRATE_NAME);
         assert_eq!(namespaces[0].symbols.len(), 0);
@@ -264,7 +395,13 @@ mod tests {
             modules: Vec::new(),
         }];
 
-        let namespaces = construct_namespaces(&resolved_symbols, STUB_CRATE_NAME);
+        let namespaces = construct_namespaces(
+            SymbolResolution {
+                symbols: resolved_symbols,
+                doc_comments: HashMap::new(),
+            },
+            STUB_CRATE_NAME,
+        );
         assert_eq!(namespaces.len(), 1);
         assert_eq!(namespaces[0].symbols.len(), 1);
         assert_eq!(namespaces[0].symbols[0].source_code, source_code);

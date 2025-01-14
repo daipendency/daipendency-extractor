@@ -11,6 +11,7 @@ pub struct Namespace {
     pub name: String,
     pub symbols: Vec<Symbol>,
     pub missing_symbols: Vec<Symbol>,
+    pub doc_comment: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -42,6 +43,7 @@ mod tests {
             name: "test_namespace".to_string(),
             symbols: vec![symbol],
             missing_symbols: vec![],
+            doc_comment: None,
         };
 
         let found = namespace.get_symbol("test_symbol");
@@ -59,6 +61,7 @@ mod tests {
             name: "test_namespace".to_string(),
             symbols: vec![],
             missing_symbols: vec![],
+            doc_comment: None,
         };
 
         assert!(
@@ -77,6 +80,7 @@ mod tests {
             name: "test_namespace".to_string(),
             symbols: vec![],
             missing_symbols: vec![symbol],
+            doc_comment: None,
         };
 
         let found = namespace.get_symbol("missing_symbol");

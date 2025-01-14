@@ -12,6 +12,7 @@ pub struct RawNamespace {
     pub definitions: Vec<Symbol>,
     pub references: Vec<(String, String)>, // (name, source_path)
     pub is_public: bool,
+    pub doc_comment: Option<String>,
 }
 
 /// Traverse the source files of the Rust crate and collect all symbols and symbol references (reexports).
@@ -53,16 +54,17 @@ fn collect_symbols_recursive(
     })?;
 
     visited_files.insert(file_path.to_path_buf(), true);
-    let file_symbols = parsing::parse_rust_file(&content, parser)?;
+    let rust_file = parsing::parse_rust_file(&content, parser)?;
 
     let mut current_namespace = RawNamespace {
         name: namespace_prefix.to_string(),
         definitions: Vec::new(),
         references: Vec::new(),
         is_public,
+        doc_comment: rust_file.doc_comment,
     };
 
-    for symbol in file_symbols {
+    for symbol in rust_file.symbols {
         match symbol {
             super::types::RustSymbol::Symbol { symbol, .. } => {
                 current_namespace.definitions.push(symbol);
@@ -83,6 +85,7 @@ fn collect_symbols_recursive(
                     definitions: Vec::new(),
                     references: Vec::new(),
                     is_public,
+                    doc_comment: None,
                 };
                 for symbol in content {
                     if let super::types::RustSymbol::Symbol { symbol, .. } = symbol {
@@ -519,5 +522,51 @@ pub enum Format {
 
         let result = collect_symbols(&path, &mut parser);
         assert!(matches!(result, Err(LaibraryError::Parse(_))));
+    }
+
+    #[test]
+    fn test_collect_symbols_file_without_doc_comment() {
+        let temp_dir = create_temp_dir();
+        let lib_rs = temp_dir.path().join("src").join("lib.rs");
+        create_file(
+            &lib_rs,
+            r#"
+pub fn public_function() {}
+"#,
+        );
+
+        let mut parser = setup_parser();
+        let namespaces = collect_symbols(&lib_rs, &mut parser).unwrap();
+
+        assert_eq!(namespaces.len(), 1);
+        assert_eq!(namespaces[0].name, "");
+        assert_eq!(namespaces[0].doc_comment, None);
+    }
+
+    #[test]
+    fn test_collect_symbols_file_with_doc_comment() {
+        let temp_dir = create_temp_dir();
+        let lib_rs = temp_dir.path().join("src").join("lib.rs");
+        create_file(
+            &lib_rs,
+            r#"//! This is a file-level doc comment.
+//! It can span multiple lines.
+
+pub fn public_function() {}
+"#,
+        );
+
+        let mut parser = setup_parser();
+        let namespaces = collect_symbols(&lib_rs, &mut parser).unwrap();
+
+        assert_eq!(namespaces.len(), 1);
+        assert_eq!(namespaces[0].name, "");
+        assert_eq!(
+            namespaces[0].doc_comment,
+            Some(
+                "//! This is a file-level doc comment.\n//! It can span multiple lines.\n"
+                    .to_string()
+            )
+        );
     }
 }
