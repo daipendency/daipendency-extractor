@@ -212,40 +212,14 @@ fn extract_outer_doc_comments(
     node: &Node,
     source_code: &str,
 ) -> Result<Option<String>, LaibraryError> {
-    let sibling = match node.prev_sibling() {
-        Some(s) => s,
-        None => return Ok(None),
-    };
+    let mut current = node.prev_sibling();
+    let mut items = Vec::new();
 
-    let mut cursor = sibling.walk();
-    let children: Vec<_> = sibling.children(&mut cursor).collect();
-
-    let is_outer_doc_comment = children
-        .iter()
-        .any(|c| c.kind() == "outer_doc_comment_marker");
-
-    if !is_outer_doc_comment {
-        return Ok(None);
-    }
-
-    match sibling.kind() {
-        "block_comment" => {
-            if children.iter().any(|child| child.kind() == "doc_comment") {
-                let text = sibling
-                    .utf8_text(source_code.as_bytes())
-                    .map_err(|e| LaibraryError::Parse(e.to_string()))?;
-                Ok(Some(text.to_string() + "\n"))
-            } else {
-                Ok(None)
-            }
-        }
-        "line_comment" => {
-            let mut current = Some(sibling);
-            let mut doc_comments = Vec::new();
-
-            while let Some(comment) = current {
-                let mut cursor = comment.walk();
-                let children: Vec<_> = comment.children(&mut cursor).collect();
+    while let Some(sibling) = current {
+        match sibling.kind() {
+            "line_comment" => {
+                let mut cursor = sibling.walk();
+                let children: Vec<_> = sibling.children(&mut cursor).collect();
 
                 let has_outer_doc = children
                     .iter()
@@ -253,31 +227,48 @@ fn extract_outer_doc_comments(
                 let has_doc_comment = children.iter().any(|child| child.kind() == "doc_comment");
 
                 if has_outer_doc && has_doc_comment {
-                    let comment_text = comment
+                    let comment_text = sibling
                         .utf8_text(source_code.as_bytes())
                         .map_err(|e| LaibraryError::Parse(e.to_string()))?;
-                    doc_comments.push(comment_text.to_string());
+                    items.push(comment_text.to_string());
                 } else {
                     break;
                 }
+            }
+            "block_comment" => {
+                let mut cursor = sibling.walk();
+                let children: Vec<_> = sibling.children(&mut cursor).collect();
 
-                current = comment.prev_sibling();
-                if let Some(next) = current {
-                    if next.kind() != "line_comment" {
-                        break;
-                    }
+                if children
+                    .iter()
+                    .any(|c| c.kind() == "outer_doc_comment_marker")
+                    && children.iter().any(|child| child.kind() == "doc_comment")
+                {
+                    let text = sibling
+                        .utf8_text(source_code.as_bytes())
+                        .map_err(|e| LaibraryError::Parse(e.to_string()))?;
+                    items.push(text.to_string() + "\n");
+                    break;
+                } else {
+                    break;
                 }
             }
-
-            if doc_comments.is_empty() {
-                return Ok(None);
+            "attribute_item" => {
+                let text = sibling
+                    .utf8_text(source_code.as_bytes())
+                    .map_err(|e| LaibraryError::Parse(e.to_string()))?;
+                items.push(text.to_string() + "\n");
             }
-
-            Ok(Some(
-                doc_comments.into_iter().rev().collect::<Vec<_>>().join(""),
-            ))
+            _ => break,
         }
-        _ => Ok(None),
+
+        current = sibling.prev_sibling();
+    }
+
+    if items.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(items.into_iter().rev().collect()))
     }
 }
 
@@ -763,6 +754,66 @@ pub trait TestTrait {
                 symbol.source_code,
                 "/// A documented method\n    pub fn test_method(&self) -> i32;"
             );
+        }
+
+        #[test]
+        fn doc_comment_with_macro() {
+            let source_code = r#"
+/// The doc comment
+#[derive(Debug)]
+pub enum Foo {
+    Bar,
+    Baz,
+}
+"#;
+            let mut parser = setup_parser();
+
+            let rust_file = parse_rust_file(source_code, &mut parser).unwrap();
+
+            let symbol = get_rust_symbol(&rust_file.symbols, "Foo").unwrap();
+            assert_starts_with!(
+                symbol.source_code,
+                "/// The doc comment\n#[derive(Debug)]\npub enum Foo"
+            );
+        }
+
+        #[test]
+        fn doc_comment_with_multiple_attributes() {
+            let source_code = r#"
+/// The doc comment
+#[derive(Debug)]
+#[serde(rename = "foo")]
+pub enum Foo {
+    Bar,
+    Baz,
+}
+"#;
+            let mut parser = setup_parser();
+
+            let rust_file = parse_rust_file(source_code, &mut parser).unwrap();
+
+            let symbol = get_rust_symbol(&rust_file.symbols, "Foo").unwrap();
+            assert_starts_with!(
+                symbol.source_code,
+                "/// The doc comment\n#[derive(Debug)]\n#[serde(rename = \"foo\")]\npub enum Foo"
+            );
+        }
+
+        #[test]
+        fn macro_without_doc_comment() {
+            let source_code = r#"
+#[derive(Debug)]
+pub enum Foo {
+    Bar,
+    Baz,
+}
+"#;
+            let mut parser = setup_parser();
+
+            let rust_file = parse_rust_file(source_code, &mut parser).unwrap();
+
+            let symbol = get_rust_symbol(&rust_file.symbols, "Foo").unwrap();
+            assert_starts_with!(symbol.source_code, "#[derive(Debug)]\npub enum Foo");
         }
     }
 
