@@ -128,12 +128,10 @@ fn collect_symbols_recursive(
                     } else {
                         format!("{}::{}", namespace_prefix, source_path)
                     }
+                } else if namespace_prefix.is_empty() {
+                    source_path.clone()
                 } else {
-                    if namespace_prefix.is_empty() {
-                        source_path.clone()
-                    } else {
-                        format!("{}::{}", namespace_prefix, source_path)
-                    }
+                    format!("{}::{}", namespace_prefix, source_path)
                 };
 
                 current_namespace.references.push((name, source_path));
