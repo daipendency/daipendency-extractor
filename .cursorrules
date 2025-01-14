@@ -27,6 +27,23 @@
 
 - When something goes wrong (e.g. tests fail, the code doesn't compile), fix the first issue and then try again. Do not try to fix multiple issues at once.
 - When an assertion causes a test to fail, try to add or improve the assertion message, instead of adding a temporary debug statement.
+- When debugging a tree-sitter structure, print the tree structure to the console using the following function:
+  ```rust
+  fn debug_node(node: &Node, source_code: &str, indent: usize) -> String {
+    let mut result = String::new();
+    let indent_str = " ".repeat(indent);
+    result.push_str(&format!(
+      "{}Kind: {}, Text: {:?}\n",
+      indent_str,
+      node.kind(),
+      node.utf8_text(source_code.as_bytes()).unwrap_or("ERROR")
+    ));
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        result.push_str(&debug_node(&child, source_code, indent + 2));
+    }
+    result
+  ```
 
 # Commit messages
 
