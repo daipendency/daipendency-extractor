@@ -47,7 +47,7 @@ pub fn construct_namespaces(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::languages::rust::symbol_resolution::ResolvedSymbol;
+    use crate::languages::rust::api::symbol_resolution::ResolvedSymbol;
     use crate::types::Symbol;
 
     const STUB_CRATE_NAME: &str = "test_crate";

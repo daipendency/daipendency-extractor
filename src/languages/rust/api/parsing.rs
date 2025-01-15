@@ -1,5 +1,5 @@
+use super::types::{RustFile, RustSymbol};
 use crate::error::LaibraryError;
-use crate::languages::rust::types::{RustFile, RustSymbol};
 use crate::types::Symbol;
 use tree_sitter::{Node, Parser};
 
@@ -355,8 +355,46 @@ fn get_symbol_source_code(node: Node, source_code: &str) -> Result<String, Laibr
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::languages::rust::test_helpers::{get_inner_module, get_rust_symbol, setup_parser};
+    use crate::languages::rust::test_helpers::setup_parser;
     use assertables::{assert_contains, assert_starts_with};
+
+    fn get_inner_module<'a>(path: &str, symbols: &'a [RustSymbol]) -> Option<&'a [RustSymbol]> {
+        let parts: Vec<&str> = path.split("::").collect();
+        let mut current_symbols = symbols;
+
+        for part in parts {
+            match current_symbols.iter().find_map(|symbol| {
+                if let RustSymbol::Module { name, content, .. } = symbol {
+                    if name == part {
+                        Some(content)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            }) {
+                Some(next_symbols) => current_symbols = next_symbols,
+                None => return None,
+            }
+        }
+
+        Some(current_symbols)
+    }
+
+    fn get_rust_symbol<'a>(symbols: &'a [RustSymbol], name: &str) -> Option<&'a Symbol> {
+        symbols.iter().find_map(|s| {
+            if let RustSymbol::Symbol { symbol, .. } = s {
+                if symbol.name == name {
+                    Some(symbol)
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        })
+    }
 
     #[test]
     fn empty_source_file() {

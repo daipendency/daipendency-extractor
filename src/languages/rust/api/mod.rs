@@ -1,11 +1,17 @@
+mod namespace_construction;
+mod parsing;
+mod symbol_collection;
+mod symbol_resolution;
+mod types;
+
 use crate::error::LaibraryError;
 use crate::types::Namespace;
 use std::path::Path;
 use tree_sitter::Parser;
 
-use super::namespace_construction::construct_namespaces;
-use super::symbol_collection::collect_symbols;
-use super::symbol_resolution::resolve_symbols;
+use namespace_construction::construct_namespaces;
+use symbol_collection::collect_symbols;
+use symbol_resolution::resolve_symbols;
 
 pub fn build_public_api(
     entry_point: &Path,
