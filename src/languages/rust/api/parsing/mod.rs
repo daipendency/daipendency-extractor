@@ -3,6 +3,9 @@ use crate::error::LaibraryError;
 use crate::types::Symbol;
 use tree_sitter::{Node, Parser};
 
+mod doc_comments;
+use doc_comments::{extract_inner_doc_comments, extract_outer_doc_comments};
+
 pub fn parse_rust_file(content: &str, parser: &mut Parser) -> Result<RustFile, LaibraryError> {
     let tree = parser
         .parse(content, None)
@@ -194,102 +197,6 @@ fn extract_attributes(node: &Node, source_code: &str) -> Result<Vec<String>, Lai
     Ok(items)
 }
 
-fn extract_outer_doc_comments(
-    node: &Node,
-    source_code: &str,
-) -> Result<Option<String>, LaibraryError> {
-    let mut current = node.prev_sibling();
-    let mut items = Vec::new();
-
-    while let Some(sibling) = current {
-        match sibling.kind() {
-            "line_comment" => {
-                let mut cursor = sibling.walk();
-                let children: Vec<_> = sibling.children(&mut cursor).collect();
-
-                let has_outer_doc = children
-                    .iter()
-                    .any(|c| c.kind() == "outer_doc_comment_marker");
-                let has_doc_comment = children.iter().any(|child| child.kind() == "doc_comment");
-
-                if has_outer_doc && has_doc_comment {
-                    let comment_text = sibling
-                        .utf8_text(source_code.as_bytes())
-                        .map_err(|e| LaibraryError::Parse(e.to_string()))?;
-                    items.push(comment_text.to_string());
-                } else {
-                    break;
-                }
-            }
-            "block_comment" => {
-                let mut cursor = sibling.walk();
-                let children: Vec<_> = sibling.children(&mut cursor).collect();
-
-                if children
-                    .iter()
-                    .any(|c| c.kind() == "outer_doc_comment_marker")
-                    && children.iter().any(|child| child.kind() == "doc_comment")
-                {
-                    let text = sibling
-                        .utf8_text(source_code.as_bytes())
-                        .map_err(|e| LaibraryError::Parse(e.to_string()))?;
-                    items.push(text.to_string() + "\n");
-                    break;
-                } else {
-                    break;
-                }
-            }
-            "attribute_item" => {
-                // Ignore attributes as they are handled separately
-            }
-            _ => break,
-        }
-
-        current = sibling.prev_sibling();
-    }
-
-    if items.is_empty() {
-        Ok(None)
-    } else {
-        Ok(Some(items.into_iter().rev().collect()))
-    }
-}
-
-fn extract_inner_doc_comments(
-    node: &Node,
-    source_code: &str,
-) -> Result<Option<String>, LaibraryError> {
-    let mut doc_comment = String::new();
-    let mut cursor = node.walk();
-    for child in node.children(&mut cursor) {
-        if child.kind() == "line_comment" {
-            let mut comment_cursor = child.walk();
-            let has_inner_doc = child
-                .children(&mut comment_cursor)
-                .any(|c| c.kind() == "inner_doc_comment_marker");
-            if has_inner_doc {
-                let comment_text = child
-                    .utf8_text(source_code.as_bytes())
-                    .map_err(|e| LaibraryError::Parse(e.to_string()))?;
-                doc_comment.push_str(comment_text);
-            } else {
-                break;
-            }
-        } else if !is_block_delimiter(&child) {
-            break;
-        }
-    }
-    Ok(if doc_comment.is_empty() {
-        None
-    } else {
-        Some(doc_comment)
-    })
-}
-
-fn is_block_delimiter(node: &Node) -> bool {
-    matches!(node.kind(), "{" | "}")
-}
-
 fn is_public(node: &Node) -> bool {
     let mut cursor = node.walk();
     let children: Vec<_> = node.children(&mut cursor).collect();
@@ -380,7 +287,7 @@ fn get_symbol_source_code(node: Node, source_code: &str) -> Result<String, Laibr
 mod tests {
     use super::*;
     use crate::languages::rust::test_helpers::setup_parser;
-    use assertables::{assert_contains, assert_starts_with};
+    use assertables::assert_contains;
 
     fn get_inner_module<'a>(path: &str, symbols: &'a [RustSymbol]) -> Option<&'a [RustSymbol]> {
         let parts: Vec<&str> = path.split("::").collect();
@@ -514,370 +421,6 @@ pub(super) fn super_function() {}
             let rust_file = parse_rust_file(source_code, &mut parser).unwrap();
 
             assert!(get_rust_symbol(&rust_file.symbols, "super_function").is_some());
-        }
-    }
-
-    mod file_doc_comments {
-        use super::*;
-
-        #[test]
-        fn no_doc_comment() {
-            let source_code = r#"
-pub struct Test {}
-"#;
-            let mut parser = setup_parser();
-
-            let rust_file = parse_rust_file(source_code, &mut parser).unwrap();
-
-            assert!(rust_file.doc_comment.is_none());
-        }
-
-        #[test]
-        fn single_line_doc_comment() {
-            let source_code = r#"
-//! This is a file-level doc comment
-pub struct Test {}
-"#;
-            let mut parser = setup_parser();
-
-            let rust_file = parse_rust_file(source_code, &mut parser).unwrap();
-
-            assert_eq!(
-                rust_file.doc_comment,
-                Some("//! This is a file-level doc comment\n".to_string())
-            );
-        }
-
-        #[test]
-        fn multiline_doc_comment() {
-            let source_code = r#"
-//! This is a file-level doc comment
-//! It spans multiple lines
-
-pub struct Test {}
-"#;
-            let mut parser = setup_parser();
-
-            let rust_file = parse_rust_file(source_code, &mut parser).unwrap();
-
-            assert_eq!(
-                rust_file.doc_comment,
-                Some(
-                    "//! This is a file-level doc comment\n//! It spans multiple lines\n"
-                        .to_string()
-                )
-            );
-        }
-
-        #[test]
-        fn regular_comment_not_doc_comment() {
-            let source_code = r#"
-// This is a regular comment
-pub struct Test {}
-"#;
-            let mut parser = setup_parser();
-
-            let rust_file = parse_rust_file(source_code, &mut parser).unwrap();
-
-            assert!(rust_file.doc_comment.is_none());
-        }
-    }
-
-    mod outer_doc_comments {
-        use super::*;
-
-        #[test]
-        fn no_doc_comments() {
-            let source_code = r#"
-pub struct Test {}
-"#;
-            let mut parser = setup_parser();
-
-            let rust_file = parse_rust_file(source_code, &mut parser).unwrap();
-
-            let symbol = get_rust_symbol(&rust_file.symbols, "Test").unwrap();
-            assert_eq!(symbol.source_code, "pub struct Test {}");
-        }
-
-        #[test]
-        fn single_line() {
-            let source_code = r#"
-/// A documented item
-pub struct Test {}
-"#;
-            let mut parser = setup_parser();
-
-            let rust_file = parse_rust_file(source_code, &mut parser).unwrap();
-
-            let symbol = get_rust_symbol(&rust_file.symbols, "Test").unwrap();
-            assert_eq!(
-                symbol.source_code,
-                "/// A documented item\npub struct Test {}"
-            );
-        }
-
-        #[test]
-        fn multiple_line() {
-            let source_code = r#"
-/// First line
-/// Second line
-pub struct Test {}
-"#;
-            let mut parser = setup_parser();
-
-            let rust_file = parse_rust_file(source_code, &mut parser).unwrap();
-
-            let symbol = get_rust_symbol(&rust_file.symbols, "Test").unwrap();
-            assert_starts_with!(symbol.source_code, "/// First line\n/// Second line\n");
-        }
-
-        #[test]
-        fn inner_doc_comments() {
-            let source_code = r#"
-/// Outer doc
-//! Inner doc
-pub struct Test {}
-"#;
-            let mut parser = setup_parser();
-
-            let rust_file = parse_rust_file(source_code, &mut parser).unwrap();
-
-            let symbol = get_rust_symbol(&rust_file.symbols, "Test").unwrap();
-            assert_starts_with!(symbol.source_code, "pub struct Test");
-        }
-
-        #[test]
-        fn regular_comments() {
-            let source_code = r#"
-/// Doc comment
-// Regular comment
-pub struct Test {}
-"#;
-            let mut parser = setup_parser();
-
-            let rust_file = parse_rust_file(source_code, &mut parser).unwrap();
-
-            let symbol = get_rust_symbol(&rust_file.symbols, "Test").unwrap();
-            assert_starts_with!(symbol.source_code, "pub struct Test");
-        }
-
-        #[test]
-        fn block_doc_comments() {
-            let source_code = r#"
-/** A block doc comment
- * with multiple lines
- */
-pub struct Test {}
-"#;
-            let mut parser = setup_parser();
-
-            let rust_file = parse_rust_file(source_code, &mut parser).unwrap();
-
-            let symbol = get_rust_symbol(&rust_file.symbols, "Test").unwrap();
-            assert_starts_with!(
-                symbol.source_code,
-                "/** A block doc comment\n * with multiple lines\n */\npub struct Test"
-            );
-        }
-
-        #[test]
-        fn file_level_doc_comments() {
-            let source_code = r#"
-//! File-level documentation
-//! More file-level docs
-
-/// This is the struct's doc
-pub struct Test {}
-"#;
-            let mut parser = setup_parser();
-
-            let rust_file = parse_rust_file(source_code, &mut parser).unwrap();
-
-            let symbol = get_rust_symbol(&rust_file.symbols, "Test").unwrap();
-            assert_starts_with!(symbol.source_code, "/// This is the struct's doc\n");
-        }
-
-        #[test]
-        fn preceding_symbol() {
-            let source_code = r#"
-/// First struct's doc
-pub struct FirstStruct {}
-
-/// Second struct's doc
-pub struct SecondStruct {}
-"#;
-            let mut parser = setup_parser();
-
-            let rust_file = parse_rust_file(source_code, &mut parser).unwrap();
-
-            let symbol = get_rust_symbol(&rust_file.symbols, "SecondStruct").unwrap();
-            assert_starts_with!(symbol.source_code, "/// Second struct's doc\n");
-        }
-
-        #[test]
-        fn block_comment_preceded_by_line_comment() {
-            let source_code = r#"
-/// This line should be ignored
-/** This block comment
- * should be returned
- */
-pub struct Test {}
-"#;
-            let mut parser = setup_parser();
-
-            let rust_file = parse_rust_file(source_code, &mut parser).unwrap();
-
-            let symbol = get_rust_symbol(&rust_file.symbols, "Test").unwrap();
-            assert_starts_with!(
-                symbol.source_code,
-                "/** This block comment\n * should be returned\n */\n"
-            );
-        }
-
-        #[test]
-        fn function_with_doc_comment() {
-            let source_code = r#"
-/// A documented function
-pub fn test_function() -> i32 {
-    42
-}
-"#;
-            let mut parser = setup_parser();
-
-            let rust_file = parse_rust_file(source_code, &mut parser).unwrap();
-
-            let symbol = get_rust_symbol(&rust_file.symbols, "test_function").unwrap();
-            assert_starts_with!(symbol.source_code, "/// A documented function\n");
-        }
-
-        #[test]
-        fn struct_with_doc_comment() {
-            let source_code = r#"
-/// A documented struct
-pub struct TestStruct {
-    field: i32
-}
-"#;
-            let mut parser = setup_parser();
-
-            let rust_file = parse_rust_file(source_code, &mut parser).unwrap();
-
-            let symbol = get_rust_symbol(&rust_file.symbols, "TestStruct").unwrap();
-            assert_starts_with!(symbol.source_code, "/// A documented struct\n");
-        }
-
-        #[test]
-        fn enum_with_doc_comment() {
-            let source_code = r#"
-/// A documented enum
-pub enum TestEnum {
-    A,
-    B
-}
-"#;
-            let mut parser = setup_parser();
-
-            let rust_file = parse_rust_file(source_code, &mut parser).unwrap();
-
-            let symbol = get_rust_symbol(&rust_file.symbols, "TestEnum").unwrap();
-            assert_starts_with!(symbol.source_code, "/// A documented enum\n");
-        }
-
-        #[test]
-        fn trait_with_doc_comment() {
-            let source_code = r#"
-/// A documented trait
-pub trait TestTrait {
-    fn test_method(&self);
-}
-"#;
-            let mut parser = setup_parser();
-
-            let rust_file = parse_rust_file(source_code, &mut parser).unwrap();
-
-            let symbol = get_rust_symbol(&rust_file.symbols, "TestTrait").unwrap();
-            assert_starts_with!(symbol.source_code, "/// A documented trait\n");
-        }
-
-        #[test]
-        fn trait_method_doc_comments() {
-            let source_code = r#"
-pub trait TestTrait {
-    /// A documented method
-    pub fn test_method(&self) -> i32 {
-        42
-    }
-}
-"#;
-            let mut parser = setup_parser();
-
-            let rust_file = parse_rust_file(source_code, &mut parser).unwrap();
-
-            let symbol = get_rust_symbol(&rust_file.symbols, "TestTrait").unwrap();
-            assert_contains!(
-                symbol.source_code,
-                "/// A documented method\n    pub fn test_method(&self) -> i32;"
-            );
-        }
-
-        #[test]
-        fn doc_comment_with_macro() {
-            let source_code = r#"
-/// The doc comment
-#[derive(Debug)]
-pub enum Foo {
-    Bar,
-    Baz,
-}
-"#;
-            let mut parser = setup_parser();
-
-            let rust_file = parse_rust_file(source_code, &mut parser).unwrap();
-
-            let symbol = get_rust_symbol(&rust_file.symbols, "Foo").unwrap();
-            assert_starts_with!(
-                symbol.source_code,
-                "/// The doc comment\n#[derive(Debug)]\npub enum Foo"
-            );
-        }
-
-        #[test]
-        fn doc_comment_with_multiple_attributes() {
-            let source_code = r#"
-/// The doc comment
-#[derive(Debug)]
-#[serde(rename = "foo")]
-pub enum Foo {
-    Bar,
-    Baz,
-}
-"#;
-            let mut parser = setup_parser();
-
-            let rust_file = parse_rust_file(source_code, &mut parser).unwrap();
-
-            let symbol = get_rust_symbol(&rust_file.symbols, "Foo").unwrap();
-            assert_starts_with!(
-                symbol.source_code,
-                "/// The doc comment\n#[derive(Debug)]\n#[serde(rename = \"foo\")]\npub enum Foo"
-            );
-        }
-
-        #[test]
-        fn macro_without_doc_comment() {
-            let source_code = r#"
-#[derive(Debug)]
-pub enum Foo {
-    Bar,
-    Baz,
-}
-"#;
-            let mut parser = setup_parser();
-
-            let rust_file = parse_rust_file(source_code, &mut parser).unwrap();
-
-            let symbol = get_rust_symbol(&rust_file.symbols, "Foo").unwrap();
-            assert_starts_with!(symbol.source_code, "#[derive(Debug)]\npub enum Foo");
         }
     }
 
@@ -1138,6 +681,82 @@ mod test_module;
                 }
                 _ => panic!("Expected ModuleDeclaration variant"),
             }
+        }
+    }
+
+    mod doc_comments {
+        use super::*;
+
+        #[test]
+        fn file_without_docs() {
+            let source_code = r#"
+pub struct Test {}
+"#;
+            let mut parser = setup_parser();
+
+            let rust_file = parse_rust_file(source_code, &mut parser).unwrap();
+
+            assert!(rust_file.doc_comment.is_none());
+            let symbol = get_rust_symbol(&rust_file.symbols, "Test").unwrap();
+            assert_eq!(symbol.source_code, "pub struct Test {}");
+        }
+
+        #[test]
+        fn file_with_docs() {
+            let source_code = r#"
+//! File-level documentation
+pub struct Test {}
+"#;
+            let mut parser = setup_parser();
+
+            let rust_file = parse_rust_file(source_code, &mut parser).unwrap();
+
+            assert_eq!(
+                rust_file.doc_comment,
+                Some("//! File-level documentation\n".to_string())
+            );
+            let symbol = get_rust_symbol(&rust_file.symbols, "Test").unwrap();
+            assert_eq!(symbol.source_code, "pub struct Test {}");
+        }
+
+        #[test]
+        fn symbol_with_outer_doc_comment() {
+            let source_code = r#"
+/// Symbol documentation
+pub struct Test {}
+"#;
+            let mut parser = setup_parser();
+
+            let rust_file = parse_rust_file(source_code, &mut parser).unwrap();
+
+            assert!(rust_file.doc_comment.is_none());
+            let symbol = get_rust_symbol(&rust_file.symbols, "Test").unwrap();
+            assert_eq!(
+                symbol.source_code,
+                "/// Symbol documentation\npub struct Test {}"
+            );
+        }
+
+        #[test]
+        fn symbol_with_both_doc_comments() {
+            let source_code = r#"
+//! File-level documentation
+/// Symbol documentation
+pub struct Test {}
+"#;
+            let mut parser = setup_parser();
+
+            let rust_file = parse_rust_file(source_code, &mut parser).unwrap();
+
+            assert_eq!(
+                rust_file.doc_comment,
+                Some("//! File-level documentation\n".to_string())
+            );
+            let symbol = get_rust_symbol(&rust_file.symbols, "Test").unwrap();
+            assert_eq!(
+                symbol.source_code,
+                "/// Symbol documentation\npub struct Test {}"
+            );
         }
     }
 }

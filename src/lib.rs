@@ -3,9 +3,12 @@ pub mod error;
 mod formatting;
 mod languages;
 mod parsing;
+mod types;
+
 #[cfg(test)]
 mod test_helpers;
-mod types;
+#[cfg(test)]
+mod treesitter_test_helpers;
 
 use crate::error::LaibraryError;
 use crate::formatting::format_library_context;
