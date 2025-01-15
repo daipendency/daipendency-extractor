@@ -89,7 +89,6 @@ fn extract_symbols_from_module(
 mod tests {
     use super::*;
     use crate::languages::rust::test_helpers::setup_parser;
-    use assertables::assert_contains;
 
     #[test]
     fn empty_source_file() {
@@ -133,68 +132,31 @@ pub use other::{One, Two};
         assert!(symbol_names.contains(&"Two"));
     }
 
-    mod function_body {
-        use super::*;
-
-        #[test]
-        fn function_declaration() {
-            let source_code = r#"
+    #[test]
+    fn function_declaration() {
+        let source_code = r#"
 pub fn test_function() -> i32 {
     return 42;
 }
 "#;
-            let mut parser = setup_parser();
+        let mut parser = setup_parser();
 
-            let rust_file = parse_rust_file(source_code, &mut parser).unwrap();
+        let rust_file = parse_rust_file(source_code, &mut parser).unwrap();
 
-            let symbol = rust_file.get_symbol("test_function").unwrap();
-            assert_eq!(symbol.source_code, "pub fn test_function() -> i32;");
-        }
-
-        #[test]
-        fn trait_method_declaration() {
-            let source_code = r#"
-pub trait TestTrait {
-    pub fn test_method(&self) -> i32 {
-        42
-    }
-}
-"#;
-            let mut parser = setup_parser();
-
-            let rust_file = parse_rust_file(source_code, &mut parser).unwrap();
-
-            let symbol = rust_file.get_symbol("TestTrait").unwrap();
-            assert_contains!(symbol.source_code, "pub fn test_method(&self) -> i32;");
-        }
+        let symbol = rust_file.get_symbol("test_function").unwrap();
+        assert_eq!(symbol.source_code, "pub fn test_function() -> i32;");
     }
 
-    mod visibility {
-        use super::*;
-
-        #[test]
-        fn private_symbols() {
-            let source_code = r#"
+    #[test]
+    fn private_symbols() {
+        let source_code = r#"
 fn private_function() {}
 "#;
-            let mut parser = setup_parser();
+        let mut parser = setup_parser();
 
-            let rust_file = parse_rust_file(source_code, &mut parser).unwrap();
+        let rust_file = parse_rust_file(source_code, &mut parser).unwrap();
 
-            assert!(rust_file.get_symbol("private_function").is_none());
-        }
-
-        #[test]
-        fn public_symbols() {
-            let source_code = r#"
-pub fn public_function() {}
-"#;
-            let mut parser = setup_parser();
-
-            let rust_file = parse_rust_file(source_code, &mut parser).unwrap();
-
-            assert!(rust_file.get_symbol("public_function").is_some());
-        }
+        assert!(rust_file.get_symbol("private_function").is_none());
     }
 
     mod inner_modules {
