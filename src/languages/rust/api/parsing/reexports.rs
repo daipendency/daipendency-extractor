@@ -1,6 +1,6 @@
+use super::files::RustSymbol;
 use super::helpers::{extract_name, is_public};
 use crate::error::LaibraryError;
-use crate::languages::rust::api::types::RustSymbol;
 use tree_sitter::Node;
 
 pub fn extract_reexports(

@@ -66,10 +66,10 @@ fn collect_symbols_recursive(
 
     for symbol in rust_file.symbols {
         match symbol {
-            super::types::RustSymbol::Symbol { symbol } => {
+            parsing::RustSymbol::Symbol { symbol } => {
                 current_namespace.definitions.push(symbol.clone());
             }
-            super::types::RustSymbol::Module {
+            parsing::RustSymbol::Module {
                 name,
                 content,
                 doc_comment,
@@ -92,13 +92,13 @@ fn collect_symbols_recursive(
                     doc_comment,
                 };
                 for symbol in content {
-                    if let super::types::RustSymbol::Symbol { symbol } = symbol {
+                    if let parsing::RustSymbol::Symbol { symbol } = symbol {
                         module_raw_namespace.definitions.push(symbol.clone());
                     }
                 }
                 namespaces.push(module_raw_namespace);
             }
-            super::types::RustSymbol::ModuleDeclaration {
+            parsing::RustSymbol::ModuleDeclaration {
                 name,
                 is_public: module_is_public,
                 ..
@@ -124,7 +124,7 @@ fn collect_symbols_recursive(
                     )?;
                 }
             }
-            super::types::RustSymbol::SymbolReexport {
+            parsing::RustSymbol::SymbolReexport {
                 name, source_path, ..
             } => {
                 let source_path = if let Some(stripped) = source_path.strip_prefix("self::") {
