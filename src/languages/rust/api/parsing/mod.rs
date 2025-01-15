@@ -173,39 +173,25 @@ fn extract_symbols_from_module(
     Ok(symbols)
 }
 
-fn extract_inner_doc_comments(
-    node: &Node,
-    source_code: &str,
-) -> Result<Option<String>, LaibraryError> {
-    let mut doc_comment = String::new();
-    let mut cursor = node.walk();
-    for child in node.children(&mut cursor) {
-        if child.kind() == "line_comment" {
-            let mut comment_cursor = child.walk();
-            let has_inner_doc = child
-                .children(&mut comment_cursor)
-                .any(|c| c.kind() == "inner_doc_comment_marker");
-            if has_inner_doc {
-                let comment_text = child
-                    .utf8_text(source_code.as_bytes())
-                    .map_err(|e| LaibraryError::Parse(e.to_string()))?;
-                doc_comment.push_str(comment_text);
-            } else {
-                break;
-            }
-        } else if !is_block_delimiter(&child) {
+fn extract_attributes(node: &Node, source_code: &str) -> Result<Vec<String>, LaibraryError> {
+    let mut current = node.prev_sibling();
+    let mut items = Vec::new();
+
+    while let Some(sibling) = current {
+        if sibling.kind() != "attribute_item" {
             break;
         }
-    }
-    Ok(if doc_comment.is_empty() {
-        None
-    } else {
-        Some(doc_comment)
-    })
-}
 
-fn is_block_delimiter(node: &Node) -> bool {
-    matches!(node.kind(), "{" | "}")
+        let text = sibling
+            .utf8_text(source_code.as_bytes())
+            .map_err(|e| LaibraryError::Parse(e.to_string()))?;
+        items.push(text.to_string());
+
+        current = sibling.prev_sibling();
+    }
+
+    items.reverse();
+    Ok(items)
 }
 
 fn extract_outer_doc_comments(
@@ -254,10 +240,7 @@ fn extract_outer_doc_comments(
                 }
             }
             "attribute_item" => {
-                let text = sibling
-                    .utf8_text(source_code.as_bytes())
-                    .map_err(|e| LaibraryError::Parse(e.to_string()))?;
-                items.push(text.to_string() + "\n");
+                // Ignore attributes as they are handled separately
             }
             _ => break,
         }
@@ -270,6 +253,41 @@ fn extract_outer_doc_comments(
     } else {
         Ok(Some(items.into_iter().rev().collect()))
     }
+}
+
+fn extract_inner_doc_comments(
+    node: &Node,
+    source_code: &str,
+) -> Result<Option<String>, LaibraryError> {
+    let mut doc_comment = String::new();
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.kind() == "line_comment" {
+            let mut comment_cursor = child.walk();
+            let has_inner_doc = child
+                .children(&mut comment_cursor)
+                .any(|c| c.kind() == "inner_doc_comment_marker");
+            if has_inner_doc {
+                let comment_text = child
+                    .utf8_text(source_code.as_bytes())
+                    .map_err(|e| LaibraryError::Parse(e.to_string()))?;
+                doc_comment.push_str(comment_text);
+            } else {
+                break;
+            }
+        } else if !is_block_delimiter(&child) {
+            break;
+        }
+    }
+    Ok(if doc_comment.is_empty() {
+        None
+    } else {
+        Some(doc_comment)
+    })
+}
+
+fn is_block_delimiter(node: &Node) -> bool {
+    matches!(node.kind(), "{" | "}")
 }
 
 fn is_public(node: &Node) -> bool {
@@ -300,6 +318,12 @@ fn get_symbol_source_code(node: Node, source_code: &str) -> Result<String, Laibr
 
     if let Some(doc_comment) = extract_outer_doc_comments(&node, source_code)? {
         source_code_with_docs.push_str(&doc_comment);
+    }
+
+    let attributes = extract_attributes(&node, source_code)?;
+    if !attributes.is_empty() {
+        let attributes_str = format!("{}\n", attributes.join("\n"));
+        source_code_with_docs.push_str(&attributes_str);
     }
 
     let symbol_source = match node.kind() {
@@ -642,7 +666,6 @@ pub struct Test {}
             let source_code = r#"
 /** A block doc comment
  * with multiple lines
- * and some indentation
  */
 pub struct Test {}
 "#;
@@ -651,7 +674,10 @@ pub struct Test {}
             let rust_file = parse_rust_file(source_code, &mut parser).unwrap();
 
             let symbol = get_rust_symbol(&rust_file.symbols, "Test").unwrap();
-            assert_starts_with!(symbol.source_code, "/** A block doc comment\n * with multiple lines\n * and some indentation\n */\npub struct Test");
+            assert_starts_with!(
+                symbol.source_code,
+                "/** A block doc comment\n * with multiple lines\n */\npub struct Test"
+            );
         }
 
         #[test]
