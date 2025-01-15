@@ -101,7 +101,7 @@ fn is_block_delimiter(node: &Node) -> bool {
 mod tests {
     use super::*;
     use crate::languages::rust::test_helpers::setup_parser;
-    use crate::treesitter_test_helpers::{find_item_node, find_item_nodes};
+    use crate::treesitter_test_helpers::{find_child_node, find_child_nodes};
 
     mod inner_doc_comments {
         use super::*;
@@ -183,7 +183,7 @@ pub struct Test {}
 "#;
             let mut parser = setup_parser();
             let tree = parser.parse(source_code, None).unwrap();
-            let node = find_item_node(tree.root_node(), "struct_item");
+            let node = find_child_node(tree.root_node(), "struct_item");
 
             let result = extract_outer_doc_comments(&node, source_code).unwrap();
 
@@ -198,7 +198,7 @@ pub struct Test {}
 "#;
             let mut parser = setup_parser();
             let tree = parser.parse(source_code, None).unwrap();
-            let node = find_item_node(tree.root_node(), "struct_item");
+            let node = find_child_node(tree.root_node(), "struct_item");
 
             let result = extract_outer_doc_comments(&node, source_code).unwrap();
 
@@ -214,7 +214,7 @@ pub struct Test {}
 "#;
             let mut parser = setup_parser();
             let tree = parser.parse(source_code, None).unwrap();
-            let node = find_item_node(tree.root_node(), "struct_item");
+            let node = find_child_node(tree.root_node(), "struct_item");
 
             let result = extract_outer_doc_comments(&node, source_code).unwrap();
 
@@ -233,7 +233,7 @@ pub struct Test {}
 "#;
             let mut parser = setup_parser();
             let tree = parser.parse(source_code, None).unwrap();
-            let node = find_item_node(tree.root_node(), "struct_item");
+            let node = find_child_node(tree.root_node(), "struct_item");
 
             let result = extract_outer_doc_comments(&node, source_code).unwrap();
 
@@ -249,7 +249,7 @@ pub struct Test {}
 "#;
             let mut parser = setup_parser();
             let tree = parser.parse(source_code, None).unwrap();
-            let node = find_item_node(tree.root_node(), "struct_item");
+            let node = find_child_node(tree.root_node(), "struct_item");
 
             let result = extract_outer_doc_comments(&node, source_code).unwrap();
 
@@ -266,7 +266,7 @@ pub struct Test {}
 "#;
             let mut parser = setup_parser();
             let tree = parser.parse(source_code, None).unwrap();
-            let node = find_item_node(tree.root_node(), "struct_item");
+            let node = find_child_node(tree.root_node(), "struct_item");
 
             let result = extract_outer_doc_comments(&node, source_code).unwrap();
 
@@ -287,7 +287,7 @@ pub struct Test {}
 "#;
             let mut parser = setup_parser();
             let tree = parser.parse(source_code, None).unwrap();
-            let node = find_item_node(tree.root_node(), "struct_item");
+            let node = find_child_node(tree.root_node(), "struct_item");
 
             let result = extract_outer_doc_comments(&node, source_code).unwrap();
 
@@ -305,7 +305,7 @@ pub struct SecondStruct {}
 "#;
             let mut parser = setup_parser();
             let tree = parser.parse(source_code, None).unwrap();
-            let nodes = find_item_nodes(tree.root_node(), "struct_item");
+            let nodes = find_child_nodes(tree.root_node(), "struct_item");
             let node = &nodes[1];
 
             let result = extract_outer_doc_comments(node, source_code).unwrap();
@@ -324,7 +324,7 @@ pub struct Test {}
 "#;
             let mut parser = setup_parser();
             let tree = parser.parse(source_code, None).unwrap();
-            let node = find_item_node(tree.root_node(), "struct_item");
+            let node = find_child_node(tree.root_node(), "struct_item");
 
             let result = extract_outer_doc_comments(&node, source_code).unwrap();
 
@@ -346,7 +346,7 @@ pub enum Foo {
 "#;
             let mut parser = setup_parser();
             let tree = parser.parse(source_code, None).unwrap();
-            let node = find_item_node(tree.root_node(), "enum_item");
+            let node = find_child_node(tree.root_node(), "enum_item");
 
             let result = extract_outer_doc_comments(&node, source_code).unwrap();
 
@@ -366,7 +366,7 @@ pub enum Foo {
 "#;
             let mut parser = setup_parser();
             let tree = parser.parse(source_code, None).unwrap();
-            let node = find_item_node(tree.root_node(), "enum_item");
+            let node = find_child_node(tree.root_node(), "enum_item");
 
             let result = extract_outer_doc_comments(&node, source_code).unwrap();
 
@@ -384,7 +384,7 @@ pub enum Foo {
 "#;
             let mut parser = setup_parser();
             let tree = parser.parse(source_code, None).unwrap();
-            let node = find_item_node(tree.root_node(), "enum_item");
+            let node = find_child_node(tree.root_node(), "enum_item");
 
             let result = extract_outer_doc_comments(&node, source_code).unwrap();
 
@@ -401,7 +401,7 @@ pub fn test_function() -> i32 {
 "#;
             let mut parser = setup_parser();
             let tree = parser.parse(source_code, None).unwrap();
-            let node = find_item_node(tree.root_node(), "function_item");
+            let node = find_child_node(tree.root_node(), "function_item");
 
             let result = extract_outer_doc_comments(&node, source_code).unwrap();
 
@@ -418,7 +418,7 @@ pub struct TestStruct {
 "#;
             let mut parser = setup_parser();
             let tree = parser.parse(source_code, None).unwrap();
-            let node = find_item_node(tree.root_node(), "struct_item");
+            let node = find_child_node(tree.root_node(), "struct_item");
 
             let result = extract_outer_doc_comments(&node, source_code).unwrap();
 
@@ -436,7 +436,7 @@ pub enum TestEnum {
 "#;
             let mut parser = setup_parser();
             let tree = parser.parse(source_code, None).unwrap();
-            let node = find_item_node(tree.root_node(), "enum_item");
+            let node = find_child_node(tree.root_node(), "enum_item");
 
             let result = extract_outer_doc_comments(&node, source_code).unwrap();
 
@@ -453,7 +453,7 @@ pub trait TestTrait {
 "#;
             let mut parser = setup_parser();
             let tree = parser.parse(source_code, None).unwrap();
-            let node = find_item_node(tree.root_node(), "trait_item");
+            let node = find_child_node(tree.root_node(), "trait_item");
 
             let result = extract_outer_doc_comments(&node, source_code).unwrap();
 
@@ -472,9 +472,9 @@ pub trait TestTrait {
 "#;
             let mut parser = setup_parser();
             let tree = parser.parse(source_code, None).unwrap();
-            let trait_node = find_item_node(tree.root_node(), "trait_item");
-            let decl_list = find_item_node(trait_node, "declaration_list");
-            let method_node = find_item_node(decl_list, "function_item");
+            let trait_node = find_child_node(tree.root_node(), "trait_item");
+            let decl_list = find_child_node(trait_node, "declaration_list");
+            let method_node = find_child_node(decl_list, "function_item");
 
             let result = extract_outer_doc_comments(&method_node, source_code).unwrap();
 
