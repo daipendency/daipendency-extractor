@@ -1,6 +1,21 @@
 use crate::error::LaibraryError;
 use tree_sitter::Node;
 
+#[derive(Debug, Clone, Copy)]
+enum DocCommentMarker {
+    Outer,
+    Inner,
+}
+
+impl DocCommentMarker {
+    fn kind(&self) -> &'static str {
+        match self {
+            DocCommentMarker::Outer => "outer_doc_comment_marker",
+            DocCommentMarker::Inner => "inner_doc_comment_marker",
+        }
+    }
+}
+
 pub fn extract_outer_doc_comments(
     node: &Node,
     source_code: &str,
@@ -29,24 +44,22 @@ fn skip_preceding_attributes(mut node: Node) -> Node {
     node
 }
 
+fn is_doc_comment(node: &Node, marker: DocCommentMarker) -> bool {
+    let mut cursor = node.walk();
+    let children: Vec<_> = node.children(&mut cursor).collect();
+    children.iter().any(|c| c.kind() == marker.kind())
+        && children.iter().any(|child| child.kind() == "doc_comment")
+}
+
 fn extract_preceding_block_comment(
     node: &Node,
     source_code: &str,
 ) -> Result<Option<String>, LaibraryError> {
-    if node.kind() == "block_comment" {
-        let mut cursor = node.walk();
-        let children: Vec<_> = node.children(&mut cursor).collect();
-
-        if children
-            .iter()
-            .any(|c| c.kind() == "outer_doc_comment_marker")
-            && children.iter().any(|child| child.kind() == "doc_comment")
-        {
-            let text = node
-                .utf8_text(source_code.as_bytes())
-                .map_err(|e| LaibraryError::Parse(e.to_string()))?;
-            return Ok(Some(text.to_string() + "\n"));
-        }
+    if node.kind() == "block_comment" && is_doc_comment(node, DocCommentMarker::Outer) {
+        let text = node
+            .utf8_text(source_code.as_bytes())
+            .map_err(|e| LaibraryError::Parse(e.to_string()))?;
+        return Ok(Some(text.to_string() + "\n"));
     }
     Ok(None)
 }
@@ -58,15 +71,7 @@ fn extract_preceding_line_doc_comments(
     let mut items = Vec::new();
 
     while node.kind() == "line_comment" {
-        let mut cursor = node.walk();
-        let children: Vec<_> = node.children(&mut cursor).collect();
-
-        let has_outer_doc = children
-            .iter()
-            .any(|c| c.kind() == "outer_doc_comment_marker");
-        let has_doc_comment = children.iter().any(|child| child.kind() == "doc_comment");
-
-        if has_outer_doc && has_doc_comment {
+        if is_doc_comment(&node, DocCommentMarker::Outer) {
             let comment_text = node
                 .utf8_text(source_code.as_bytes())
                 .map_err(|e| LaibraryError::Parse(e.to_string()))?;
@@ -97,11 +102,7 @@ pub fn extract_inner_doc_comments(
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         if child.kind() == "line_comment" {
-            let mut comment_cursor = child.walk();
-            let has_inner_doc = child
-                .children(&mut comment_cursor)
-                .any(|c| c.kind() == "inner_doc_comment_marker");
-            if has_inner_doc {
+            if is_doc_comment(&child, DocCommentMarker::Inner) {
                 let comment_text = child
                     .utf8_text(source_code.as_bytes())
                     .map_err(|e| LaibraryError::Parse(e.to_string()))?;
