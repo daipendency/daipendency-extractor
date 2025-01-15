@@ -5,61 +5,88 @@ pub fn extract_outer_doc_comments(
     node: &Node,
     source_code: &str,
 ) -> Result<Option<String>, LaibraryError> {
-    let mut current = node.prev_sibling();
+    let Some(previous_sibling) = node.prev_sibling() else {
+        return Ok(None);
+    };
+
+    let previous_sibling = skip_preceding_attributes(previous_sibling);
+
+    if let Some(comment) = extract_preceding_block_comment(&previous_sibling, source_code)? {
+        return Ok(Some(comment));
+    }
+
+    extract_preceding_line_doc_comments(previous_sibling, source_code)
+}
+
+fn skip_preceding_attributes(mut node: Node) -> Node {
+    while node.kind() == "attribute_item" {
+        if let Some(prev) = node.prev_sibling() {
+            node = prev;
+        } else {
+            break;
+        }
+    }
+    node
+}
+
+fn extract_preceding_block_comment(
+    node: &Node,
+    source_code: &str,
+) -> Result<Option<String>, LaibraryError> {
+    if node.kind() == "block_comment" {
+        let mut cursor = node.walk();
+        let children: Vec<_> = node.children(&mut cursor).collect();
+
+        if children
+            .iter()
+            .any(|c| c.kind() == "outer_doc_comment_marker")
+            && children.iter().any(|child| child.kind() == "doc_comment")
+        {
+            let text = node
+                .utf8_text(source_code.as_bytes())
+                .map_err(|e| LaibraryError::Parse(e.to_string()))?;
+            return Ok(Some(text.to_string() + "\n"));
+        }
+    }
+    Ok(None)
+}
+
+fn extract_preceding_line_doc_comments(
+    mut node: Node,
+    source_code: &str,
+) -> Result<Option<String>, LaibraryError> {
     let mut items = Vec::new();
 
-    while let Some(sibling) = current {
-        match sibling.kind() {
-            "line_comment" => {
-                let mut cursor = sibling.walk();
-                let children: Vec<_> = sibling.children(&mut cursor).collect();
+    while node.kind() == "line_comment" {
+        let mut cursor = node.walk();
+        let children: Vec<_> = node.children(&mut cursor).collect();
 
-                let has_outer_doc = children
-                    .iter()
-                    .any(|c| c.kind() == "outer_doc_comment_marker");
-                let has_doc_comment = children.iter().any(|child| child.kind() == "doc_comment");
+        let has_outer_doc = children
+            .iter()
+            .any(|c| c.kind() == "outer_doc_comment_marker");
+        let has_doc_comment = children.iter().any(|child| child.kind() == "doc_comment");
 
-                if has_outer_doc && has_doc_comment {
-                    let comment_text = sibling
-                        .utf8_text(source_code.as_bytes())
-                        .map_err(|e| LaibraryError::Parse(e.to_string()))?;
-                    items.push(comment_text.to_string());
-                } else {
-                    break;
-                }
-            }
-            "block_comment" => {
-                let mut cursor = sibling.walk();
-                let children: Vec<_> = sibling.children(&mut cursor).collect();
-
-                if children
-                    .iter()
-                    .any(|c| c.kind() == "outer_doc_comment_marker")
-                    && children.iter().any(|child| child.kind() == "doc_comment")
-                {
-                    let text = sibling
-                        .utf8_text(source_code.as_bytes())
-                        .map_err(|e| LaibraryError::Parse(e.to_string()))?;
-                    items.push(text.to_string() + "\n");
-                    break;
-                } else {
-                    break;
-                }
-            }
-            "attribute_item" => {
-                // Ignore attributes as they are handled separately
-            }
-            _ => break,
+        if has_outer_doc && has_doc_comment {
+            let comment_text = node
+                .utf8_text(source_code.as_bytes())
+                .map_err(|e| LaibraryError::Parse(e.to_string()))?;
+            items.push(comment_text.to_string());
+        } else {
+            break;
         }
 
-        current = sibling.prev_sibling();
+        if let Some(prev) = node.prev_sibling() {
+            node = prev;
+        } else {
+            break;
+        }
     }
 
-    if items.is_empty() {
-        Ok(None)
+    Ok(if items.is_empty() {
+        None
     } else {
-        Ok(Some(items.into_iter().rev().collect()))
-    }
+        Some(items.into_iter().rev().collect())
+    })
 }
 
 pub fn extract_inner_doc_comments(
@@ -270,7 +297,6 @@ pub struct Test {}
         fn file_level_doc_comments() {
             let source_code = r#"
 //! File-level documentation
-//! More file-level docs
 
 /// This is the struct's doc
 pub struct Test {}
@@ -322,14 +348,29 @@ pub struct Test {}
         }
 
         #[test]
+        fn line_comment_preceded_by_block_comment() {
+            let source_code = r#"
+/** Block comment that shouldn't be output */
+/// Doc comment that should be output
+pub struct Foo {}
+"#;
+            let tree = make_tree(source_code);
+            let node = find_child_node(tree.root_node(), "struct_item");
+
+            let result = extract_outer_doc_comments(&node, source_code).unwrap();
+
+            assert_eq!(
+                result,
+                Some("/// Doc comment that should be output\n".to_string())
+            );
+        }
+
+        #[test]
         fn doc_comment_with_attribute() {
             let source_code = r#"
 /// The doc comment
 #[derive(Debug)]
-pub enum Foo {
-    Bar,
-    Baz,
-}
+pub enum Foo {}
 "#;
             let tree = make_tree(source_code);
             let node = find_child_node(tree.root_node(), "enum_item");
@@ -345,10 +386,7 @@ pub enum Foo {
 /// The doc comment
 #[derive(Debug)]
 #[serde(rename = "foo")]
-pub enum Foo {
-    Bar,
-    Baz,
-}
+pub enum Foo {}
 "#;
             let tree = make_tree(source_code);
             let node = find_child_node(tree.root_node(), "enum_item");
@@ -362,10 +400,7 @@ pub enum Foo {
         fn attribute_without_doc_comment() {
             let source_code = r#"
 #[derive(Debug)]
-pub enum Foo {
-    Bar,
-    Baz,
-}
+pub enum Foo {}
 "#;
             let tree = make_tree(source_code);
             let node = find_child_node(tree.root_node(), "enum_item");
