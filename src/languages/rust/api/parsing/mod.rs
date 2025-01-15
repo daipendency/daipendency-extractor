@@ -25,6 +25,14 @@ pub fn parse_rust_file(content: &str, parser: &mut Parser) -> Result<RustFile, L
     })
 }
 
+fn get_declaration_list(node: Node) -> Option<Node> {
+    let mut cursor = node.walk();
+    let children: Vec<_> = node.children(&mut cursor).collect();
+    children
+        .into_iter()
+        .find(|n| n.kind() == "declaration_list")
+}
+
 fn extract_symbols_from_module(
     module_node: Node,
     source_code: &str,
@@ -53,15 +61,11 @@ fn extract_symbols_from_module(
                 let inner_mod_name = extract_name(&child, source_code)?;
                 let is_public = is_public(&child);
 
-                let mut cursor = child.walk();
-                let children: Vec<_> = child.children(&mut cursor).collect();
-                if let Some(declaration_list) =
-                    children.iter().find(|n| n.kind() == "declaration_list")
-                {
+                if let Some(declaration_list) = get_declaration_list(child) {
                     // This is an inline module with content
-                    let doc_comment = extract_inner_doc_comments(declaration_list, source_code)?;
+                    let doc_comment = extract_inner_doc_comments(&declaration_list, source_code)?;
                     let inner_mod_symbols =
-                        extract_symbols_from_module(*declaration_list, source_code)?;
+                        extract_symbols_from_module(declaration_list, source_code)?;
 
                     if is_public {
                         symbols.push(RustSymbol::Module {
@@ -111,13 +115,9 @@ fn get_symbol_source_code(node: Node, source_code: &str) -> Result<String, Laibr
             )
         }
         "trait_item" => {
-            let mut cursor = node.walk();
-            let declaration_list = node
-                .children(&mut cursor)
-                .find(|n| n.kind() == "declaration_list")
-                .ok_or_else(|| {
-                    LaibraryError::Parse("Failed to find trait declaration list".to_string())
-                })?;
+            let declaration_list = get_declaration_list(node).ok_or_else(|| {
+                LaibraryError::Parse("Failed to find trait declaration list".to_string())
+            })?;
 
             let mut trait_source = String::new();
             trait_source.push_str(&source_code[node.start_byte()..declaration_list.start_byte()]);
