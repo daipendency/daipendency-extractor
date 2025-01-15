@@ -9,6 +9,14 @@ pub fn is_public(node: &Node) -> bool {
         .any(|child| child.kind() == "visibility_modifier")
 }
 
+pub fn get_declaration_list(node: Node) -> Option<Node> {
+    let mut cursor = node.walk();
+    let children: Vec<_> = node.children(&mut cursor).collect();
+    children
+        .into_iter()
+        .find(|n| n.kind() == "declaration_list")
+}
+
 pub fn extract_attributes(node: &Node, source_code: &str) -> Result<Vec<String>, LaibraryError> {
     let mut current = node.prev_sibling();
     let mut items = Vec::new();

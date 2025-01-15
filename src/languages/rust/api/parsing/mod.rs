@@ -9,7 +9,7 @@ mod reexports;
 mod test_helpers;
 
 use doc_comments::{extract_inner_doc_comments, extract_outer_doc_comments};
-use helpers::{extract_attributes, extract_name, is_public};
+use helpers::{extract_attributes, extract_name, get_declaration_list, is_public};
 use reexports::extract_reexports;
 
 pub fn parse_rust_file(content: &str, parser: &mut Parser) -> Result<RustFile, LaibraryError> {
@@ -23,14 +23,6 @@ pub fn parse_rust_file(content: &str, parser: &mut Parser) -> Result<RustFile, L
         doc_comment,
         symbols,
     })
-}
-
-fn get_declaration_list(node: Node) -> Option<Node> {
-    let mut cursor = node.walk();
-    let children: Vec<_> = node.children(&mut cursor).collect();
-    children
-        .into_iter()
-        .find(|n| n.kind() == "declaration_list")
 }
 
 fn extract_symbols_from_module(
@@ -62,12 +54,12 @@ fn extract_symbols_from_module(
                 let is_public = is_public(&child);
 
                 if let Some(declaration_list) = get_declaration_list(child) {
-                    // This is an inline module with content
-                    let doc_comment = extract_inner_doc_comments(&declaration_list, source_code)?;
-                    let inner_mod_symbols =
-                        extract_symbols_from_module(declaration_list, source_code)?;
-
+                    // This is a module block (`mod foo { ... }`)
                     if is_public {
+                        let doc_comment =
+                            extract_inner_doc_comments(&declaration_list, source_code)?;
+                        let inner_mod_symbols =
+                            extract_symbols_from_module(declaration_list, source_code)?;
                         symbols.push(RustSymbol::Module {
                             name: inner_mod_name,
                             content: inner_mod_symbols,
@@ -75,7 +67,7 @@ fn extract_symbols_from_module(
                         });
                     }
                 } else {
-                    // This is a module declaration (mod foo;)
+                    // This is a module declaration (`mod foo;`)
                     symbols.push(RustSymbol::ModuleDeclaration {
                         name: inner_mod_name,
                         is_public,
@@ -154,28 +146,6 @@ mod tests {
     use crate::languages::rust::test_helpers::setup_parser;
     use assertables::assert_contains;
 
-    #[test]
-    fn reexports_multiple_symbols() {
-        let source_code = r#"
-pub use other::{One, Two};
-"#;
-        let mut parser = setup_parser();
-
-        let rust_file = parse_rust_file(source_code, &mut parser).unwrap();
-
-        assert_eq!(rust_file.symbols.len(), 2);
-        let symbol_names: Vec<_> = rust_file
-            .symbols
-            .iter()
-            .map(|s| match s {
-                RustSymbol::SymbolReexport { name, .. } => name.as_str(),
-                _ => panic!("Expected SymbolReexport variant"),
-            })
-            .collect();
-        assert!(symbol_names.contains(&"One"));
-        assert!(symbol_names.contains(&"Two"));
-    }
-
     fn get_inner_module<'a>(path: &str, symbols: &'a [RustSymbol]) -> Option<&'a [RustSymbol]> {
         let parts: Vec<&str> = path.split("::").collect();
         let mut current_symbols = symbols;
@@ -232,6 +202,28 @@ pub use other::{One, Two};
         let result = parse_rust_file(source_code, &mut parser);
 
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn reexports_multiple_symbols() {
+        let source_code = r#"
+pub use other::{One, Two};
+"#;
+        let mut parser = setup_parser();
+
+        let rust_file = parse_rust_file(source_code, &mut parser).unwrap();
+
+        assert_eq!(rust_file.symbols.len(), 2);
+        let symbol_names: Vec<_> = rust_file
+            .symbols
+            .iter()
+            .map(|s| match s {
+                RustSymbol::SymbolReexport { name, .. } => name.as_str(),
+                _ => panic!("Expected SymbolReexport variant"),
+            })
+            .collect();
+        assert!(symbol_names.contains(&"One"));
+        assert!(symbol_names.contains(&"Two"));
     }
 
     mod function_body {
