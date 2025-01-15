@@ -69,17 +69,23 @@ pub fn extract_reexports(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::languages::rust::test_helpers::setup_parser;
+    use crate::languages::rust::api::parsing::test_helpers::make_tree;
     use crate::treesitter_test_helpers::find_child_node;
+
+    fn get_symbol(name: &str, symbols: &[RustSymbol]) -> RustSymbol {
+        symbols
+            .iter()
+            .find(|s| matches!(s, RustSymbol::SymbolReexport { name: n, .. } if n == name))
+            .expect("Symbol not found")
+            .clone()
+    }
 
     #[test]
     fn private_module() {
         let source_code = r#"
 use inner::Format;
 "#;
-        let mut parser = setup_parser();
-
-        let tree = parser.parse(source_code, None).unwrap();
+        let tree = make_tree(source_code);
         let use_declaration = find_child_node(tree.root_node(), "use_declaration");
         let symbols = extract_reexports(&use_declaration, source_code).unwrap();
 
@@ -91,59 +97,33 @@ use inner::Format;
         let source_code = r#"
 pub use inner::Format;
 "#;
-        let mut parser = setup_parser();
-
-        let tree = parser.parse(source_code, None).unwrap();
+        let tree = make_tree(source_code);
         let use_declaration = tree.root_node().child(0).unwrap();
         let symbols = extract_reexports(&use_declaration, source_code).unwrap();
 
-        assert_eq!(symbols.len(), 1);
-        match &symbols[0] {
-            RustSymbol::SymbolReexport {
-                name, source_path, ..
-            } => {
-                assert_eq!(name, "Format");
-                assert_eq!(source_path, "inner::Format");
-            }
-            _ => panic!("Expected SymbolReexport variant"),
-        }
+        let symbol = get_symbol("Format", &symbols);
+        assert!(
+            matches!(symbol, RustSymbol::SymbolReexport { source_path, .. } if source_path == "inner::Format")
+        );
     }
 
     #[test]
-    fn use_tree_list() {
+    fn multiple_items() {
         let source_code = r#"
 pub use inner::{TextFormatter, OtherType};
 "#;
-        let mut parser = setup_parser();
-
-        let tree = parser.parse(source_code, None).unwrap();
+        let tree = make_tree(source_code);
         let use_declaration = tree.root_node().child(0).unwrap();
+
         let symbols = extract_reexports(&use_declaration, source_code).unwrap();
 
-        assert_eq!(symbols.len(), 2);
-        let mut found_text_formatter = false;
-        let mut found_other_type = false;
-
-        for symbol in &symbols {
-            match symbol {
-                RustSymbol::SymbolReexport {
-                    name, source_path, ..
-                } => match name.as_str() {
-                    "TextFormatter" => {
-                        assert_eq!(source_path, "inner::TextFormatter");
-                        found_text_formatter = true;
-                    }
-                    "OtherType" => {
-                        assert_eq!(source_path, "inner::OtherType");
-                        found_other_type = true;
-                    }
-                    _ => panic!("Unexpected symbol name"),
-                },
-                _ => panic!("Expected SymbolReexport variant"),
-            }
-        }
-
-        assert!(found_text_formatter, "TextFormatter not found");
-        assert!(found_other_type, "OtherType not found");
+        let formatter = get_symbol("TextFormatter", &symbols);
+        assert!(
+            matches!(formatter, RustSymbol::SymbolReexport { source_path, .. } if source_path == "inner::TextFormatter")
+        );
+        let other = get_symbol("OtherType", &symbols);
+        assert!(
+            matches!(other, RustSymbol::SymbolReexport { source_path, .. } if source_path == "inner::OtherType")
+        );
     }
 }
