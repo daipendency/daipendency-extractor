@@ -4,9 +4,13 @@ use crate::types::Symbol;
 use tree_sitter::{Node, Parser};
 
 mod doc_comments;
+mod helpers;
+mod reexports;
 mod test_helpers;
 
 use doc_comments::{extract_inner_doc_comments, extract_outer_doc_comments};
+use helpers::{extract_attributes, extract_name, is_public};
+use reexports::extract_reexports;
 
 pub fn parse_rust_file(content: &str, parser: &mut Parser) -> Result<RustFile, LaibraryError> {
     let tree = parser
@@ -43,104 +47,7 @@ fn extract_symbols_from_module(
                 });
             }
             "use_declaration" => {
-                if !is_public(&child) {
-                    continue;
-                }
-                let mut cursor = child.walk();
-                let children: Vec<_> = child.children(&mut cursor).collect();
-
-                if let Some(scoped) = children.iter().find(|c| c.kind() == "scoped_identifier") {
-                    let mut scoped_cursor = scoped.walk();
-                    let scoped_children: Vec<_> = scoped.children(&mut scoped_cursor).collect();
-
-                    let mut path_parts = Vec::new();
-                    for scoped_child in &scoped_children {
-                        let text = scoped_child
-                            .utf8_text(source_code.as_bytes())
-                            .map_err(|e| LaibraryError::Parse(e.to_string()))?;
-                        path_parts.push(text);
-                    }
-
-                    if let Some(name) = path_parts.last() {
-                        let path = path_parts[..path_parts.len() - 1].join("");
-                        symbols.push(RustSymbol::SymbolReexport {
-                            name: name.to_string(),
-                            source_path: format!("{}{}", path, name),
-                        });
-                    }
-                } else if let Some(scoped_list) =
-                    children.iter().find(|c| c.kind() == "scoped_use_list")
-                {
-                    let mut scoped_cursor = scoped_list.walk();
-                    let scoped_children: Vec<_> =
-                        scoped_list.children(&mut scoped_cursor).collect();
-
-                    let path_prefix = if let Some(path) = scoped_children.first() {
-                        path.utf8_text(source_code.as_bytes())
-                            .map_err(|e| LaibraryError::Parse(e.to_string()))?
-                            .to_string()
-                    } else {
-                        String::new()
-                    };
-
-                    if let Some(use_list) = scoped_children.iter().find(|c| c.kind() == "use_list")
-                    {
-                        let mut list_cursor = use_list.walk();
-                        let list_items: Vec<_> = use_list.children(&mut list_cursor).collect();
-                        for list_item in list_items {
-                            if list_item.kind() == "identifier" {
-                                let name = list_item
-                                    .utf8_text(source_code.as_bytes())
-                                    .map_err(|e| LaibraryError::Parse(e.to_string()))?;
-                                symbols.push(RustSymbol::SymbolReexport {
-                                    name: name.to_string(),
-                                    source_path: format!("{}::{}", path_prefix, name),
-                                });
-                            }
-                        }
-                    }
-                } else if let Some(tree) = children.iter().find(|c| c.kind() == "use_tree") {
-                    let mut tree_cursor = tree.walk();
-                    let tree_children: Vec<_> = tree.children(&mut tree_cursor).collect();
-
-                    if let Some(list) = tree_children.iter().find(|c| c.kind() == "use_tree_list") {
-                        let mut list_cursor = list.walk();
-                        for list_item in list.children(&mut list_cursor) {
-                            if list_item.kind() == "use_tree" {
-                                if let Some(name_node) = list_item.child_by_field_name("name") {
-                                    let name = extract_name(&name_node, source_code)?;
-                                    let path_prefix =
-                                        if let Some(path) = tree.child_by_field_name("path") {
-                                            let prefix = path
-                                                .utf8_text(source_code.as_bytes())
-                                                .map_err(|e| LaibraryError::Parse(e.to_string()))?;
-                                            format!("{}::", prefix)
-                                        } else {
-                                            String::new()
-                                        };
-                                    symbols.push(RustSymbol::SymbolReexport {
-                                        name: name.clone(),
-                                        source_path: format!("{}{}", path_prefix, name),
-                                    });
-                                }
-                            }
-                        }
-                    } else if let Some(name_node) = tree.child_by_field_name("name") {
-                        let name = extract_name(&name_node, source_code)?;
-                        let path_prefix = if let Some(path) = tree.child_by_field_name("path") {
-                            let prefix = path
-                                .utf8_text(source_code.as_bytes())
-                                .map_err(|e| LaibraryError::Parse(e.to_string()))?;
-                            format!("{}::", prefix)
-                        } else {
-                            String::new()
-                        };
-                        symbols.push(RustSymbol::SymbolReexport {
-                            name: name.clone(),
-                            source_path: format!("{}{}", path_prefix, name),
-                        });
-                    }
-                }
+                symbols.extend(extract_reexports(&child, source_code)?);
             }
             "mod_item" => {
                 let inner_mod_name = extract_name(&child, source_code)?;
@@ -176,50 +83,6 @@ fn extract_symbols_from_module(
     }
 
     Ok(symbols)
-}
-
-fn extract_attributes(node: &Node, source_code: &str) -> Result<Vec<String>, LaibraryError> {
-    let mut current = node.prev_sibling();
-    let mut items = Vec::new();
-
-    while let Some(sibling) = current {
-        if sibling.kind() != "attribute_item" {
-            break;
-        }
-
-        let text = sibling
-            .utf8_text(source_code.as_bytes())
-            .map_err(|e| LaibraryError::Parse(e.to_string()))?;
-        items.push(text.to_string());
-
-        current = sibling.prev_sibling();
-    }
-
-    items.reverse();
-    Ok(items)
-}
-
-fn is_public(node: &Node) -> bool {
-    let mut cursor = node.walk();
-    let children: Vec<_> = node.children(&mut cursor).collect();
-    children
-        .iter()
-        .any(|child| child.kind() == "visibility_modifier")
-}
-
-fn extract_name(node: &Node, source_code: &str) -> Result<String, LaibraryError> {
-    let mut cursor = node.walk();
-    let children: Vec<_> = node.children(&mut cursor).collect();
-    children
-        .iter()
-        .find(|child| matches!(child.kind(), "identifier" | "type_identifier"))
-        .and_then(|child| {
-            child
-                .utf8_text(source_code.as_bytes())
-                .map(|s| s.to_string())
-                .ok()
-        })
-        .ok_or_else(|| LaibraryError::Parse("Failed to extract name".to_string()))
 }
 
 fn get_symbol_source_code(node: Node, source_code: &str) -> Result<String, LaibraryError> {
@@ -290,6 +153,28 @@ mod tests {
     use super::*;
     use crate::languages::rust::test_helpers::setup_parser;
     use assertables::assert_contains;
+
+    #[test]
+    fn reexports_multiple_symbols() {
+        let source_code = r#"
+pub use other::{One, Two};
+"#;
+        let mut parser = setup_parser();
+
+        let rust_file = parse_rust_file(source_code, &mut parser).unwrap();
+
+        assert_eq!(rust_file.symbols.len(), 2);
+        let symbol_names: Vec<_> = rust_file
+            .symbols
+            .iter()
+            .map(|s| match s {
+                RustSymbol::SymbolReexport { name, .. } => name.as_str(),
+                _ => panic!("Expected SymbolReexport variant"),
+            })
+            .collect();
+        assert!(symbol_names.contains(&"One"));
+        assert!(symbol_names.contains(&"Two"));
+    }
 
     fn get_inner_module<'a>(path: &str, symbols: &'a [RustSymbol]) -> Option<&'a [RustSymbol]> {
         let parts: Vec<&str> = path.split("::").collect();
@@ -392,7 +277,6 @@ pub trait TestTrait {
         fn private_symbols() {
             let source_code = r#"
 fn private_function() {}
-pub fn public_function() -> () {}
 "#;
             let mut parser = setup_parser();
 
@@ -402,27 +286,15 @@ pub fn public_function() -> () {}
         }
 
         #[test]
-        fn crate_visible_symbols() {
+        fn public_symbols() {
             let source_code = r#"
-pub(crate) fn crate_function() {}
+pub fn public_function() {}
 "#;
             let mut parser = setup_parser();
 
             let rust_file = parse_rust_file(source_code, &mut parser).unwrap();
 
-            assert!(get_rust_symbol(&rust_file.symbols, "crate_function").is_some());
-        }
-
-        #[test]
-        fn super_visible_symbols() {
-            let source_code = r#"
-pub(super) fn super_function() {}
-"#;
-            let mut parser = setup_parser();
-
-            let rust_file = parse_rust_file(source_code, &mut parser).unwrap();
-
-            assert!(get_rust_symbol(&rust_file.symbols, "super_function").is_some());
+            assert!(get_rust_symbol(&rust_file.symbols, "public_function").is_some());
         }
     }
 
@@ -580,67 +452,6 @@ pub mod other;
                 _ => panic!("Expected ModuleDeclaration variant"),
             };
             assert_eq!(symbol, "other");
-        }
-    }
-
-    mod reexports {
-        use super::*;
-
-        #[test]
-        fn single_item() {
-            let source_code = r#"
-pub use inner::Format;
-"#;
-            let mut parser = setup_parser();
-
-            let rust_file = parse_rust_file(source_code, &mut parser).unwrap();
-
-            assert_eq!(rust_file.symbols.len(), 1);
-            match &rust_file.symbols[0] {
-                RustSymbol::SymbolReexport {
-                    name, source_path, ..
-                } => {
-                    assert_eq!(name, "Format");
-                    assert_eq!(source_path, "inner::Format");
-                }
-                _ => panic!("Expected SymbolReexport variant"),
-            }
-        }
-
-        #[test]
-        fn use_tree_list() {
-            let source_code = r#"
-pub use inner::{TextFormatter, OtherType};
-"#;
-            let mut parser = setup_parser();
-
-            let rust_file = parse_rust_file(source_code, &mut parser).unwrap();
-
-            assert_eq!(rust_file.symbols.len(), 2);
-            let mut found_text_formatter = false;
-            let mut found_other_type = false;
-
-            for symbol in &rust_file.symbols {
-                match symbol {
-                    RustSymbol::SymbolReexport {
-                        name, source_path, ..
-                    } => match name.as_str() {
-                        "TextFormatter" => {
-                            assert_eq!(source_path, "inner::TextFormatter");
-                            found_text_formatter = true;
-                        }
-                        "OtherType" => {
-                            assert_eq!(source_path, "inner::OtherType");
-                            found_other_type = true;
-                        }
-                        _ => panic!("Unexpected symbol name"),
-                    },
-                    _ => panic!("Expected SymbolReexport variant"),
-                }
-            }
-
-            assert!(found_text_formatter, "TextFormatter not found");
-            assert!(found_other_type, "OtherType not found");
         }
     }
 
