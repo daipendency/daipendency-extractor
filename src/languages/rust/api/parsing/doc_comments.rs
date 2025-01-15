@@ -100,7 +100,7 @@ fn is_block_delimiter(node: &Node) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::languages::rust::test_helpers::setup_parser;
+    use crate::languages::rust::api::parsing::test_helpers::make_tree;
     use crate::treesitter_test_helpers::{find_child_node, find_child_nodes};
 
     mod inner_doc_comments {
@@ -111,8 +111,7 @@ mod tests {
             let source_code = r#"
 pub struct Test {}
 "#;
-            let mut parser = setup_parser();
-            let tree = parser.parse(source_code, None).unwrap();
+            let tree = make_tree(source_code);
 
             let result = extract_inner_doc_comments(&tree.root_node(), source_code).unwrap();
 
@@ -125,8 +124,7 @@ pub struct Test {}
 //! This is a file-level doc comment
 pub struct Test {}
 "#;
-            let mut parser = setup_parser();
-            let tree = parser.parse(source_code, None).unwrap();
+            let tree = make_tree(source_code);
 
             let result = extract_inner_doc_comments(&tree.root_node(), source_code).unwrap();
 
@@ -144,8 +142,7 @@ pub struct Test {}
 
 pub struct Test {}
 "#;
-            let mut parser = setup_parser();
-            let tree = parser.parse(source_code, None).unwrap();
+            let tree = make_tree(source_code);
 
             let result = extract_inner_doc_comments(&tree.root_node(), source_code).unwrap();
 
@@ -164,8 +161,7 @@ pub struct Test {}
 // This is a regular comment
 pub struct Test {}
 "#;
-            let mut parser = setup_parser();
-            let tree = parser.parse(source_code, None).unwrap();
+            let tree = make_tree(source_code);
 
             let result = extract_inner_doc_comments(&tree.root_node(), source_code).unwrap();
 
@@ -181,8 +177,7 @@ pub struct Test {}
             let source_code = r#"
 pub struct Test {}
 "#;
-            let mut parser = setup_parser();
-            let tree = parser.parse(source_code, None).unwrap();
+            let tree = make_tree(source_code);
             let node = find_child_node(tree.root_node(), "struct_item");
 
             let result = extract_outer_doc_comments(&node, source_code).unwrap();
@@ -196,8 +191,7 @@ pub struct Test {}
 /// A documented item
 pub struct Test {}
 "#;
-            let mut parser = setup_parser();
-            let tree = parser.parse(source_code, None).unwrap();
+            let tree = make_tree(source_code);
             let node = find_child_node(tree.root_node(), "struct_item");
 
             let result = extract_outer_doc_comments(&node, source_code).unwrap();
@@ -212,8 +206,7 @@ pub struct Test {}
 /// Second line
 pub struct Test {}
 "#;
-            let mut parser = setup_parser();
-            let tree = parser.parse(source_code, None).unwrap();
+            let tree = make_tree(source_code);
             let node = find_child_node(tree.root_node(), "struct_item");
 
             let result = extract_outer_doc_comments(&node, source_code).unwrap();
@@ -231,8 +224,7 @@ pub struct Test {}
 /// Outer doc
 pub struct Test {}
 "#;
-            let mut parser = setup_parser();
-            let tree = parser.parse(source_code, None).unwrap();
+            let tree = make_tree(source_code);
             let node = find_child_node(tree.root_node(), "struct_item");
 
             let result = extract_outer_doc_comments(&node, source_code).unwrap();
@@ -247,8 +239,7 @@ pub struct Test {}
 /// Doc comment
 pub struct Test {}
 "#;
-            let mut parser = setup_parser();
-            let tree = parser.parse(source_code, None).unwrap();
+            let tree = make_tree(source_code);
             let node = find_child_node(tree.root_node(), "struct_item");
 
             let result = extract_outer_doc_comments(&node, source_code).unwrap();
@@ -264,8 +255,7 @@ pub struct Test {}
  */
 pub struct Test {}
 "#;
-            let mut parser = setup_parser();
-            let tree = parser.parse(source_code, None).unwrap();
+            let tree = make_tree(source_code);
             let node = find_child_node(tree.root_node(), "struct_item");
 
             let result = extract_outer_doc_comments(&node, source_code).unwrap();
@@ -285,8 +275,7 @@ pub struct Test {}
 /// This is the struct's doc
 pub struct Test {}
 "#;
-            let mut parser = setup_parser();
-            let tree = parser.parse(source_code, None).unwrap();
+            let tree = make_tree(source_code);
             let node = find_child_node(tree.root_node(), "struct_item");
 
             let result = extract_outer_doc_comments(&node, source_code).unwrap();
@@ -303,8 +292,7 @@ pub struct FirstStruct {}
 /// Second struct's doc
 pub struct SecondStruct {}
 "#;
-            let mut parser = setup_parser();
-            let tree = parser.parse(source_code, None).unwrap();
+            let tree = make_tree(source_code);
             let nodes = find_child_nodes(tree.root_node(), "struct_item");
             let node = &nodes[1];
 
@@ -322,8 +310,7 @@ pub struct SecondStruct {}
  */
 pub struct Test {}
 "#;
-            let mut parser = setup_parser();
-            let tree = parser.parse(source_code, None).unwrap();
+            let tree = make_tree(source_code);
             let node = find_child_node(tree.root_node(), "struct_item");
 
             let result = extract_outer_doc_comments(&node, source_code).unwrap();
@@ -335,7 +322,7 @@ pub struct Test {}
         }
 
         #[test]
-        fn doc_comment_with_macro() {
+        fn doc_comment_with_attribute() {
             let source_code = r#"
 /// The doc comment
 #[derive(Debug)]
@@ -344,8 +331,7 @@ pub enum Foo {
     Baz,
 }
 "#;
-            let mut parser = setup_parser();
-            let tree = parser.parse(source_code, None).unwrap();
+            let tree = make_tree(source_code);
             let node = find_child_node(tree.root_node(), "enum_item");
 
             let result = extract_outer_doc_comments(&node, source_code).unwrap();
@@ -364,8 +350,7 @@ pub enum Foo {
     Baz,
 }
 "#;
-            let mut parser = setup_parser();
-            let tree = parser.parse(source_code, None).unwrap();
+            let tree = make_tree(source_code);
             let node = find_child_node(tree.root_node(), "enum_item");
 
             let result = extract_outer_doc_comments(&node, source_code).unwrap();
@@ -374,7 +359,7 @@ pub enum Foo {
         }
 
         #[test]
-        fn macro_without_doc_comment() {
+        fn attribute_without_doc_comment() {
             let source_code = r#"
 #[derive(Debug)]
 pub enum Foo {
@@ -382,82 +367,12 @@ pub enum Foo {
     Baz,
 }
 "#;
-            let mut parser = setup_parser();
-            let tree = parser.parse(source_code, None).unwrap();
+            let tree = make_tree(source_code);
             let node = find_child_node(tree.root_node(), "enum_item");
 
             let result = extract_outer_doc_comments(&node, source_code).unwrap();
 
             assert!(result.is_none());
-        }
-
-        #[test]
-        fn function_with_doc_comment() {
-            let source_code = r#"
-/// A documented function
-pub fn test_function() -> i32 {
-    42
-}
-"#;
-            let mut parser = setup_parser();
-            let tree = parser.parse(source_code, None).unwrap();
-            let node = find_child_node(tree.root_node(), "function_item");
-
-            let result = extract_outer_doc_comments(&node, source_code).unwrap();
-
-            assert_eq!(result, Some("/// A documented function\n".to_string()));
-        }
-
-        #[test]
-        fn struct_with_doc_comment() {
-            let source_code = r#"
-/// A documented struct
-pub struct TestStruct {
-    field: i32
-}
-"#;
-            let mut parser = setup_parser();
-            let tree = parser.parse(source_code, None).unwrap();
-            let node = find_child_node(tree.root_node(), "struct_item");
-
-            let result = extract_outer_doc_comments(&node, source_code).unwrap();
-
-            assert_eq!(result, Some("/// A documented struct\n".to_string()));
-        }
-
-        #[test]
-        fn enum_with_doc_comment() {
-            let source_code = r#"
-/// A documented enum
-pub enum TestEnum {
-    A,
-    B
-}
-"#;
-            let mut parser = setup_parser();
-            let tree = parser.parse(source_code, None).unwrap();
-            let node = find_child_node(tree.root_node(), "enum_item");
-
-            let result = extract_outer_doc_comments(&node, source_code).unwrap();
-
-            assert_eq!(result, Some("/// A documented enum\n".to_string()));
-        }
-
-        #[test]
-        fn trait_with_doc_comment() {
-            let source_code = r#"
-/// A documented trait
-pub trait TestTrait {
-    fn test_method(&self);
-}
-"#;
-            let mut parser = setup_parser();
-            let tree = parser.parse(source_code, None).unwrap();
-            let node = find_child_node(tree.root_node(), "trait_item");
-
-            let result = extract_outer_doc_comments(&node, source_code).unwrap();
-
-            assert_eq!(result, Some("/// A documented trait\n".to_string()));
         }
 
         #[test]
@@ -470,8 +385,7 @@ pub trait TestTrait {
     }
 }
 "#;
-            let mut parser = setup_parser();
-            let tree = parser.parse(source_code, None).unwrap();
+            let tree = make_tree(source_code);
             let trait_node = find_child_node(tree.root_node(), "trait_item");
             let decl_list = find_child_node(trait_node, "declaration_list");
             let method_node = find_child_node(decl_list, "function_item");

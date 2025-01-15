@@ -4,6 +4,8 @@ use crate::types::Symbol;
 use tree_sitter::{Node, Parser};
 
 mod doc_comments;
+mod test_helpers;
+
 use doc_comments::{extract_inner_doc_comments, extract_outer_doc_comments};
 
 pub fn parse_rust_file(content: &str, parser: &mut Parser) -> Result<RustFile, LaibraryError> {
