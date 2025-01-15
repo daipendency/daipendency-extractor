@@ -1,5 +1,5 @@
 use super::files::RustSymbol;
-use super::helpers::{extract_name, is_public};
+use super::helpers::is_public;
 use crate::error::LaibraryError;
 use tree_sitter::Node;
 
@@ -61,46 +61,6 @@ pub fn extract_reexports(
                 }
             }
         }
-    } else if let Some(tree) = children.iter().find(|c| c.kind() == "use_tree") {
-        let mut tree_cursor = tree.walk();
-        let tree_children: Vec<_> = tree.children(&mut tree_cursor).collect();
-
-        if let Some(list) = tree_children.iter().find(|c| c.kind() == "use_tree_list") {
-            let mut list_cursor = list.walk();
-            for list_item in list.children(&mut list_cursor) {
-                if list_item.kind() == "use_tree" {
-                    if let Some(name_node) = list_item.child_by_field_name("name") {
-                        let name = extract_name(&name_node, source_code)?;
-                        let path_prefix = if let Some(path) = tree.child_by_field_name("path") {
-                            let prefix = path
-                                .utf8_text(source_code.as_bytes())
-                                .map_err(|e| LaibraryError::Parse(e.to_string()))?;
-                            format!("{}::", prefix)
-                        } else {
-                            String::new()
-                        };
-                        symbols.push(RustSymbol::SymbolReexport {
-                            name: name.clone(),
-                            source_path: format!("{}{}", path_prefix, name),
-                        });
-                    }
-                }
-            }
-        } else if let Some(name_node) = tree.child_by_field_name("name") {
-            let name = extract_name(&name_node, source_code)?;
-            let path_prefix = if let Some(path) = tree.child_by_field_name("path") {
-                let prefix = path
-                    .utf8_text(source_code.as_bytes())
-                    .map_err(|e| LaibraryError::Parse(e.to_string()))?;
-                format!("{}::", prefix)
-            } else {
-                String::new()
-            };
-            symbols.push(RustSymbol::SymbolReexport {
-                name: name.clone(),
-                source_path: format!("{}{}", path_prefix, name),
-            });
-        }
     }
 
     Ok(symbols)
@@ -110,6 +70,21 @@ pub fn extract_reexports(
 mod tests {
     use super::*;
     use crate::languages::rust::test_helpers::setup_parser;
+    use crate::treesitter_test_helpers::find_child_node;
+
+    #[test]
+    fn private_module() {
+        let source_code = r#"
+use inner::Format;
+"#;
+        let mut parser = setup_parser();
+
+        let tree = parser.parse(source_code, None).unwrap();
+        let use_declaration = find_child_node(tree.root_node(), "use_declaration");
+        let symbols = extract_reexports(&use_declaration, source_code).unwrap();
+
+        assert!(symbols.is_empty());
+    }
 
     #[test]
     fn single_item() {

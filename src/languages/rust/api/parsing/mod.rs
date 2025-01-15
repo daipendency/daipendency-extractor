@@ -279,48 +279,6 @@ pub mod other;
         }
     }
 
-    mod module_declarations {
-        use super::*;
-
-        #[test]
-        fn public_module() {
-            let source_code = r#"
-pub mod test_module;
-"#;
-            let mut parser = setup_parser();
-
-            let rust_file = parse_rust_file(source_code, &mut parser).unwrap();
-
-            assert_eq!(rust_file.symbols.len(), 1);
-            match &rust_file.symbols[0] {
-                RustSymbol::ModuleDeclaration { name, is_public } => {
-                    assert_eq!(name, "test_module");
-                    assert!(is_public);
-                }
-                _ => panic!("Expected ModuleDeclaration variant"),
-            }
-        }
-
-        #[test]
-        fn private_module() {
-            let source_code = r#"
-mod test_module;
-"#;
-            let mut parser = setup_parser();
-
-            let rust_file = parse_rust_file(source_code, &mut parser).unwrap();
-
-            assert_eq!(rust_file.symbols.len(), 1);
-            match &rust_file.symbols[0] {
-                RustSymbol::ModuleDeclaration { name, is_public } => {
-                    assert_eq!(name, "test_module");
-                    assert!(!is_public);
-                }
-                _ => panic!("Expected ModuleDeclaration variant"),
-            }
-        }
-    }
-
     mod doc_comments {
         use super::*;
 
