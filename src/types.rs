@@ -22,10 +22,7 @@ pub struct Symbol {
 
 impl Namespace {
     pub fn get_symbol(&self, name: &str) -> Option<&Symbol> {
-        self.symbols
-            .iter()
-            .find(|s| s.name == name)
-            .or_else(|| self.missing_symbols.iter().find(|s| s.name == name))
+        self.symbols.iter().find(|s| s.name == name)
     }
 }
 
@@ -47,6 +44,7 @@ mod tests {
         };
 
         let found = namespace.get_symbol("test_symbol");
+
         assert!(found.is_some(), "Should find existing symbol");
         assert_eq!(
             found.unwrap().name,
@@ -64,16 +62,16 @@ mod tests {
             doc_comment: None,
         };
 
-        assert!(
-            namespace.get_symbol("nonexistent").is_none(),
-            "Should not find nonexistent symbol"
-        );
+        let symbol = namespace.get_symbol("nonexistent");
+
+        assert!(symbol.is_none(), "Should not find nonexistent symbol");
     }
 
     #[test]
     fn test_get_missing_symbol() {
+        let symbol_name = "missing_symbol".to_string();
         let symbol = Symbol {
-            name: "missing_symbol".to_string(),
+            name: symbol_name.clone(),
             source_code: "fn missing() {}".to_string(),
         };
         let namespace = Namespace {
@@ -83,12 +81,8 @@ mod tests {
             doc_comment: None,
         };
 
-        let found = namespace.get_symbol("missing_symbol");
-        assert!(found.is_some(), "Should find missing symbol");
-        assert_eq!(
-            found.unwrap().name,
-            "missing_symbol",
-            "Found symbol should have correct name"
-        );
+        let symbol_found = namespace.get_symbol(&symbol_name);
+
+        assert!(symbol_found.is_none());
     }
 }

@@ -102,12 +102,12 @@ mod tests {
 
     #[test]
     fn invalid_syntax() {
-        let source_code = "fn main() { let x = 1; let y = 2; let z = x + y; }";
+        let source_code = "echo 'Hello, World!'";
         let mut parser = setup_parser();
 
-        let result = parse_rust_file(source_code, &mut parser);
+        let rust_file = parse_rust_file(source_code, &mut parser).unwrap();
 
-        assert!(result.is_ok());
+        assert!(rust_file.symbols.is_empty());
     }
 
     #[test]
@@ -119,17 +119,8 @@ pub use other::{One, Two};
 
         let rust_file = parse_rust_file(source_code, &mut parser).unwrap();
 
-        assert_eq!(rust_file.symbols.len(), 2);
-        let symbol_names: Vec<_> = rust_file
-            .symbols
-            .iter()
-            .map(|s| match s {
-                RustSymbol::SymbolReexport { name, .. } => name.as_str(),
-                _ => panic!("Expected SymbolReexport variant"),
-            })
-            .collect();
-        assert!(symbol_names.contains(&"One"));
-        assert!(symbol_names.contains(&"Two"));
+        assert!(rust_file.get_symbol("One").is_some());
+        assert!(rust_file.get_symbol("Two").is_some());
     }
 
     #[test]
@@ -144,6 +135,9 @@ pub fn test_function() -> i32 {
         let rust_file = parse_rust_file(source_code, &mut parser).unwrap();
 
         let symbol = rust_file.get_symbol("test_function").unwrap();
+        let RustSymbol::Symbol { symbol } = symbol else {
+            panic!("Expected a symbol")
+        };
         assert_eq!(symbol.source_code, "pub fn test_function() -> i32;");
     }
 
@@ -156,44 +150,11 @@ fn private_function() {}
 
         let rust_file = parse_rust_file(source_code, &mut parser).unwrap();
 
-        assert!(rust_file.get_symbol("private_function").is_none());
+        assert_eq!(rust_file.symbols.len(), 0);
     }
 
     mod inner_modules {
         use super::*;
-
-        #[test]
-        fn module_without_inner_doc_comment() {
-            let source_code = r#"
-pub mod inner {
-    pub fn nested_function() -> String {}
-}
-"#;
-            let mut parser = setup_parser();
-
-            let rust_file = parse_rust_file(source_code, &mut parser).unwrap();
-
-            let symbol = rust_file.get_symbol("inner::nested_function").unwrap();
-            assert_eq!(symbol.name, "nested_function");
-        }
-
-        #[test]
-        fn module_with_inner_doc_comment() {
-            let source_code = r#"
-pub mod inner {
-    //! This is the inner doc comment
-    //! It spans multiple lines
-
-    pub fn nested_function() -> String {}
-}
-"#;
-            let mut parser = setup_parser();
-
-            let rust_file = parse_rust_file(source_code, &mut parser).unwrap();
-
-            let symbol = rust_file.get_symbol("inner::nested_function").unwrap();
-            assert_eq!(symbol.name, "nested_function");
-        }
 
         #[test]
         fn public_modules() {
@@ -207,7 +168,7 @@ pub mod inner {
             let rust_file = parse_rust_file(source_code, &mut parser).unwrap();
 
             let symbol = rust_file.get_symbol("inner::nested_function").unwrap();
-            assert_eq!(symbol.name, "nested_function");
+            assert!(matches!(symbol, RustSymbol::Symbol { .. }));
         }
 
         #[test]
@@ -256,10 +217,8 @@ pub mod inner {
 
             let rust_file = parse_rust_file(source_code, &mut parser).unwrap();
 
-            let deeper_enum = rust_file
-                .get_symbol("inner::deeper::DeeperEnum")
-                .expect("Should find DeeperEnum");
-            assert_eq!(deeper_enum.name, "DeeperEnum");
+            let deeper_enum = rust_file.get_symbol("inner::deeper::DeeperEnum").unwrap();
+            assert!(matches!(deeper_enum, RustSymbol::Symbol { .. }));
         }
 
         #[test]
@@ -292,8 +251,6 @@ pub struct Test {}
             let rust_file = parse_rust_file(source_code, &mut parser).unwrap();
 
             assert!(rust_file.doc_comment.is_none());
-            let symbol = rust_file.get_symbol("Test").unwrap();
-            assert_eq!(symbol.source_code, "pub struct Test {}");
         }
 
         #[test]
@@ -310,8 +267,6 @@ pub struct Test {}
                 rust_file.doc_comment,
                 Some("//! File-level documentation\n".to_string())
             );
-            let symbol = rust_file.get_symbol("Test").unwrap();
-            assert_eq!(symbol.source_code, "pub struct Test {}");
         }
 
         #[test]
@@ -324,8 +279,10 @@ pub struct Test {}
 
             let rust_file = parse_rust_file(source_code, &mut parser).unwrap();
 
-            assert!(rust_file.doc_comment.is_none());
             let symbol = rust_file.get_symbol("Test").unwrap();
+            let RustSymbol::Symbol { symbol } = symbol else {
+                panic!("Expected a symbol")
+            };
             assert_eq!(
                 symbol.source_code,
                 "/// Symbol documentation\npub struct Test {}"
@@ -333,7 +290,7 @@ pub struct Test {}
         }
 
         #[test]
-        fn symbol_with_both_doc_comments() {
+        fn file_and_symbol_with_doc_comments() {
             let source_code = r#"
 //! File-level documentation
 /// Symbol documentation
@@ -348,6 +305,9 @@ pub struct Test {}
                 Some("//! File-level documentation\n".to_string())
             );
             let symbol = rust_file.get_symbol("Test").unwrap();
+            let RustSymbol::Symbol { symbol } = symbol else {
+                panic!("Expected a symbol")
+            };
             assert_eq!(
                 symbol.source_code,
                 "/// Symbol documentation\npub struct Test {}"

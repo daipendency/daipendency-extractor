@@ -33,7 +33,7 @@ impl RustFile {
         let mut current_symbols = &self.symbols;
 
         for part in parts {
-            match current_symbols.iter().find_map(|symbol| {
+            let module_symbols = current_symbols.iter().find_map(|symbol| {
                 if let RustSymbol::Module { name, content, .. } = symbol {
                     if name == part {
                         Some(content)
@@ -43,7 +43,8 @@ impl RustFile {
                 } else {
                     None
                 }
-            }) {
+            });
+            match module_symbols {
                 Some(next_symbols) => current_symbols = next_symbols,
                 None => return None,
             }
@@ -52,7 +53,7 @@ impl RustFile {
         Some(current_symbols)
     }
 
-    pub fn get_symbol<'a>(&'a self, path: &str) -> Option<&'a Symbol> {
+    pub fn get_symbol<'a>(&'a self, path: &str) -> Option<&'a RustSymbol> {
         let parts: Vec<&str> = path.split("::").collect();
         if parts.is_empty() {
             return None;
@@ -70,16 +71,11 @@ impl RustFile {
             &self.symbols
         };
 
-        symbols.iter().find_map(|s| {
-            if let RustSymbol::Symbol { symbol } = s {
-                if symbol.name == symbol_name {
-                    Some(symbol)
-                } else {
-                    None
-                }
-            } else {
-                None
-            }
+        symbols.iter().find(|s| match s {
+            RustSymbol::Symbol { symbol } => symbol.name == symbol_name,
+            RustSymbol::Module { name, .. } => name == symbol_name,
+            RustSymbol::ModuleDeclaration { name, .. } => name == symbol_name,
+            RustSymbol::SymbolReexport { name, .. } => name == symbol_name,
         })
     }
 }

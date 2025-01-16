@@ -46,7 +46,6 @@ mod tests {
         let temp_dir = create_temp_dir();
         let lib_rs = temp_dir.path().join("src").join("lib.rs");
         let module_rs = temp_dir.path().join("src").join("module.rs");
-
         create_file(
             &lib_rs,
             r#"
@@ -67,8 +66,8 @@ pub enum Format {
 }
 "#,
         );
-
         let mut parser = setup_parser();
+
         let namespaces = build_public_api(&lib_rs, STUB_CRATE_NAME, &mut parser).unwrap();
 
         assert_eq!(namespaces.len(), 2);

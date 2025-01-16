@@ -192,8 +192,8 @@ pub fn public_function() {}
 fn private_function() {}
 "#,
         );
-
         let mut parser = setup_parser();
+
         let namespaces = collect_symbols(&lib_rs, &mut parser).unwrap();
 
         assert_eq!(namespaces.len(), 1);
@@ -217,7 +217,6 @@ fn private_function() {}
         let temp_dir = create_temp_dir();
         let lib_rs = temp_dir.path().join("src").join("lib.rs");
         let module_rs = temp_dir.path().join("src").join("module.rs");
-
         create_file(
             &lib_rs,
             r#"
@@ -231,8 +230,8 @@ pub fn root_function() {}
 pub fn module_function() {}
 "#,
         );
-
         let mut parser = setup_parser();
+
         let namespaces = collect_symbols(&lib_rs, &mut parser).unwrap();
 
         assert_eq!(namespaces.len(), 2);
