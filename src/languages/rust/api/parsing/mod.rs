@@ -5,13 +5,13 @@ use tree_sitter::{Node, Parser};
 mod doc_comments;
 mod files;
 mod helpers;
-mod reexports;
+mod symbol_reexports;
 mod symbols;
 mod test_helpers;
 
 use doc_comments::extract_inner_doc_comments;
 use helpers::{extract_name, get_declaration_list, is_public};
-use reexports::extract_reexports;
+use symbol_reexports::extract_symbol_reexports;
 use symbols::get_symbol_source_code;
 
 pub use files::{RustFile, RustSymbol};
@@ -51,7 +51,7 @@ fn extract_symbols_from_module(
                 });
             }
             "use_declaration" => {
-                symbols.extend(extract_reexports(&child, source_code)?);
+                symbols.extend(extract_symbol_reexports(&child, source_code)?);
             }
             "mod_item" => {
                 let inner_mod_name = extract_name(&child, source_code)?;
