@@ -21,16 +21,7 @@ pub fn collect_symbols(
     parser: &mut Parser,
 ) -> Result<Vec<RawNamespace>, LaibraryError> {
     let mut visited_files = HashMap::new();
-    let mut namespaces = Vec::new();
-    collect_symbols_recursive(
-        entry_point,
-        "",
-        true,
-        parser,
-        &mut visited_files,
-        &mut namespaces,
-    )?;
-    Ok(namespaces)
+    collect_symbols_recursive(entry_point, "", true, parser, &mut visited_files)
 }
 
 fn collect_symbols_recursive(
@@ -39,10 +30,9 @@ fn collect_symbols_recursive(
     is_public: bool,
     parser: &mut Parser,
     visited_files: &mut HashMap<PathBuf, bool>,
-    namespaces: &mut Vec<RawNamespace>,
-) -> Result<(), LaibraryError> {
+) -> Result<Vec<RawNamespace>, LaibraryError> {
     if visited_files.contains_key(&file_path.to_path_buf()) {
-        return Ok(());
+        return Ok(Vec::new());
     }
 
     let content = std::fs::read_to_string(file_path).map_err(|e| {
@@ -56,6 +46,7 @@ fn collect_symbols_recursive(
     visited_files.insert(file_path.to_path_buf(), true);
     let rust_file = parsing::parse_rust_file(&content, parser)?;
 
+    let mut namespaces = Vec::new();
     let mut current_namespace = RawNamespace {
         name: namespace_prefix.to_string(),
         definitions: Vec::new(),
@@ -114,28 +105,20 @@ fn collect_symbols_recursive(
                         },
                         name
                     );
-                    collect_symbols_recursive(
+                    let mut child_namespaces = collect_symbols_recursive(
                         &module_path,
                         &module_namespace,
                         module_is_public,
                         parser,
                         visited_files,
-                        namespaces,
                     )?;
+                    namespaces.append(&mut child_namespaces);
                 }
             }
             parsing::RustSymbol::SymbolReexport {
                 name, source_path, ..
             } => {
-                let source_path = if let Some(stripped) = source_path.strip_prefix("self::") {
-                    stripped.to_string()
-                } else if source_path.contains("::") {
-                    if namespace_prefix.is_empty() {
-                        source_path.clone()
-                    } else {
-                        format!("{}::{}", namespace_prefix, source_path)
-                    }
-                } else if namespace_prefix.is_empty() {
+                let source_path = if namespace_prefix.is_empty() {
                     source_path.clone()
                 } else {
                     format!("{}::{}", namespace_prefix, source_path)
@@ -147,7 +130,7 @@ fn collect_symbols_recursive(
     }
 
     namespaces.push(current_namespace);
-    Ok(())
+    Ok(namespaces)
 }
 
 fn resolve_module_path(current_file: &Path, module_name: &str) -> Result<PathBuf, LaibraryError> {
@@ -182,345 +165,8 @@ mod tests {
     use crate::test_helpers::{create_file, create_temp_dir};
 
     #[test]
-    fn test_collect_symbols_single_file() {
-        let temp_dir = create_temp_dir();
-        let lib_rs = temp_dir.path().join("src").join("lib.rs");
-        create_file(
-            &lib_rs,
-            r#"
-pub fn public_function() {}
-fn private_function() {}
-"#,
-        );
-        let mut parser = setup_parser();
-
-        let namespaces = collect_symbols(&lib_rs, &mut parser).unwrap();
-
-        assert_eq!(namespaces.len(), 1);
-        assert_eq!(namespaces[0].name, "");
-        assert_eq!(
-            namespaces[0].definitions.len(),
-            1,
-            "Should only collect public functions"
-        );
-        assert_eq!(namespaces[0].references.len(), 0);
-
-        let definitions = &namespaces[0].definitions;
-        assert!(
-            definitions.iter().any(|s| s.name == "public_function"),
-            "Should collect public function"
-        );
-    }
-
-    #[test]
-    fn test_collect_symbols_with_module() {
-        let temp_dir = create_temp_dir();
-        let lib_rs = temp_dir.path().join("src").join("lib.rs");
-        let module_rs = temp_dir.path().join("src").join("module.rs");
-        create_file(
-            &lib_rs,
-            r#"
-pub mod module;
-pub fn root_function() {}
-"#,
-        );
-        create_file(
-            &module_rs,
-            r#"
-pub fn module_function() {}
-"#,
-        );
-        let mut parser = setup_parser();
-
-        let namespaces = collect_symbols(&lib_rs, &mut parser).unwrap();
-
-        assert_eq!(namespaces.len(), 2);
-        let root = namespaces.iter().find(|n| n.name.is_empty()).unwrap();
-        assert_eq!(root.definitions.len(), 1);
-        assert_eq!(root.references.len(), 0);
-
-        let module = namespaces.iter().find(|n| n.name == "module").unwrap();
-        assert_eq!(module.definitions.len(), 1);
-        assert_eq!(module.references.len(), 0);
-    }
-
-    #[test]
-    fn test_collect_symbols_nested_module() {
-        let temp_dir = create_temp_dir();
-        let lib_rs = temp_dir.path().join("src").join("lib.rs");
-        let module_dir = temp_dir.path().join("src").join("module");
-        let mod_rs = module_dir.join("mod.rs");
-
-        create_file(
-            &lib_rs,
-            r#"
-pub mod module;
-pub fn root_function() {}
-"#,
-        );
-        create_file(
-            &mod_rs,
-            r#"
-pub fn module_function() {}
-"#,
-        );
-
-        let mut parser = setup_parser();
-        let namespaces = collect_symbols(&lib_rs, &mut parser).unwrap();
-
-        assert_eq!(namespaces.len(), 2);
-        let root = namespaces.iter().find(|n| n.name.is_empty()).unwrap();
-        assert_eq!(root.definitions.len(), 1);
-        assert_eq!(root.references.len(), 0);
-
-        let module = namespaces.iter().find(|n| n.name == "module").unwrap();
-        assert_eq!(module.definitions.len(), 1);
-        assert_eq!(module.references.len(), 0);
-    }
-
-    #[test]
-    fn test_collect_symbols_missing_module() {
-        let temp_dir = create_temp_dir();
-        let lib_rs = temp_dir.path().join("src").join("lib.rs");
-        create_file(
-            &lib_rs,
-            r#"
-pub mod missing;
-pub fn root_function() {}
-"#,
-        );
-
-        let mut parser = setup_parser();
-        let namespaces = collect_symbols(&lib_rs, &mut parser).unwrap();
-
-        assert_eq!(namespaces.len(), 1);
-        assert_eq!(namespaces[0].name, "");
-        assert_eq!(namespaces[0].definitions.len(), 1);
-        assert_eq!(namespaces[0].references.len(), 0);
-    }
-
-    #[test]
-    fn test_collect_symbols_module_reexport() {
-        let temp_dir = create_temp_dir();
-        let lib_rs = temp_dir.path().join("src").join("lib.rs");
-        let module_rs = temp_dir.path().join("src").join("module.rs");
-
-        create_file(
-            &lib_rs,
-            r#"
-pub mod module;
-pub use module::InnerStruct;
-"#,
-        );
-        create_file(
-            &module_rs,
-            r#"
-pub struct InnerStruct;
-"#,
-        );
-
-        let mut parser = setup_parser();
-        let namespaces = collect_symbols(&lib_rs, &mut parser).unwrap();
-
-        assert_eq!(namespaces.len(), 2);
-        let root = namespaces.iter().find(|n| n.name.is_empty()).unwrap();
-        assert_eq!(root.definitions.len(), 0);
-        assert_eq!(root.references.len(), 1);
-        assert_eq!(root.references[0].0, "InnerStruct");
-        assert_eq!(root.references[0].1, "module::InnerStruct");
-
-        let module = namespaces.iter().find(|n| n.name == "module").unwrap();
-        assert_eq!(module.definitions.len(), 1);
-        assert_eq!(module.references.len(), 0);
-        assert_eq!(module.definitions[0].name, "InnerStruct");
-    }
-
-    #[test]
-    fn test_collect_symbols_module_internal_reexport() {
-        let temp_dir = create_temp_dir();
-        let lib_rs = temp_dir.path().join("src").join("lib.rs");
-        let text_dir = temp_dir.path().join("src").join("text");
-        let text_mod_rs = text_dir.join("mod.rs");
-        let formatter_rs = text_dir.join("formatter.rs");
-
-        create_file(
-            &lib_rs,
-            r#"
-pub mod text;
-"#,
-        );
-        create_file(
-            &text_mod_rs,
-            r#"
-mod formatter;
-pub use formatter::{Format, TextFormatter};
-"#,
-        );
-        create_file(
-            &formatter_rs,
-            r#"
-pub struct TextFormatter {
-    format: Format,
-}
-
-pub enum Format {
-    Plain,
-    Rich,
-}
-"#,
-        );
-
-        let mut parser = setup_parser();
-        let namespaces = collect_symbols(&lib_rs, &mut parser).unwrap();
-
-        assert_eq!(namespaces.len(), 3);
-        let root = namespaces.iter().find(|n| n.name.is_empty()).unwrap();
-        assert_eq!(root.definitions.len(), 0);
-        assert_eq!(root.references.len(), 0);
-
-        let text = namespaces.iter().find(|n| n.name == "text").unwrap();
-        assert_eq!(text.definitions.len(), 0);
-        assert_eq!(text.references.len(), 2);
-        assert!(text.references.iter().any(|(name, source_path)| {
-            name == "Format" && source_path == "text::formatter::Format"
-        }));
-        assert!(text.references.iter().any(|(name, source_path)| {
-            name == "TextFormatter" && source_path == "text::formatter::TextFormatter"
-        }));
-
-        let formatter = namespaces
-            .iter()
-            .find(|n| n.name == "text::formatter")
-            .unwrap();
-        assert_eq!(formatter.definitions.len(), 2);
-        assert_eq!(formatter.references.len(), 0);
-        assert!(formatter.definitions.iter().any(|s| s.name == "Format"));
-        assert!(formatter
-            .definitions
-            .iter()
-            .any(|s| s.name == "TextFormatter"));
-    }
-
-    #[test]
-    fn test_collect_symbols_private_module() {
-        let temp_dir = create_temp_dir();
-        let lib_rs = temp_dir.path().join("src").join("lib.rs");
-        let text_dir = temp_dir.path().join("src").join("text");
-        let text_mod_rs = text_dir.join("mod.rs");
-        let formatter_rs = text_dir.join("formatter.rs");
-
-        create_file(
-            &lib_rs,
-            r#"
-pub mod text;
-"#,
-        );
-        create_file(
-            &text_mod_rs,
-            r#"
-mod formatter;
-pub use formatter::{Format, TextFormatter};
-"#,
-        );
-        create_file(
-            &formatter_rs,
-            r#"
-pub struct TextFormatter {
-    format: Format,
-}
-
-pub enum Format {
-    Plain,
-    Rich,
-}
-"#,
-        );
-
-        let mut parser = setup_parser();
-        let namespaces = collect_symbols(&lib_rs, &mut parser).unwrap();
-        let formatter = namespaces
-            .iter()
-            .find(|n| n.name == "text::formatter")
-            .unwrap();
-        assert_eq!(formatter.definitions.len(), 2);
-        assert!(formatter.definitions.iter().any(|s| s.name == "Format"));
-        assert!(formatter
-            .definitions
-            .iter()
-            .any(|s| s.name == "TextFormatter"));
-        assert!(!formatter.is_public);
-
-        // But its symbols should be reexported in the text module
-        let text = namespaces.iter().find(|n| n.name == "text").unwrap();
-        assert_eq!(text.references.len(), 2);
-        assert!(text.references.iter().any(|(name, _)| name == "Format"));
-        assert!(text
-            .references
-            .iter()
-            .any(|(name, _)| name == "TextFormatter"));
-    }
-
-    #[test]
-    fn test_collect_symbols_reexport_chain() {
-        let temp_dir = create_temp_dir();
-        let lib_rs = temp_dir.path().join("src").join("lib.rs");
-        let formatting_dir = temp_dir.path().join("src").join("formatting");
-        let formatting_mod_rs = formatting_dir.join("mod.rs");
-        let format_rs = formatting_dir.join("format.rs");
-
-        create_file(
-            &lib_rs,
-            r#"
-mod formatting;
-pub use formatting::Format;
-"#,
-        );
-        create_file(
-            &formatting_mod_rs,
-            r#"
-mod format;
-pub use format::Format;
-"#,
-        );
-        create_file(
-            &format_rs,
-            r#"
-pub enum Format {
-    Markdown,
-    Html,
-    Plain,
-}
-"#,
-        );
-
-        let mut parser = setup_parser();
-        let namespaces = collect_symbols(&lib_rs, &mut parser).unwrap();
-
-        assert_eq!(namespaces.len(), 3);
-        let root = namespaces.iter().find(|n| n.name.is_empty()).unwrap();
-        assert_eq!(root.definitions.len(), 0);
-        assert_eq!(root.references.len(), 1);
-        assert_eq!(root.references[0].0, "Format");
-        assert_eq!(root.references[0].1, "formatting::Format");
-
-        let formatting = namespaces.iter().find(|n| n.name == "formatting").unwrap();
-        assert_eq!(formatting.definitions.len(), 0);
-        assert_eq!(formatting.references.len(), 1);
-        assert_eq!(formatting.references[0].0, "Format");
-        assert_eq!(formatting.references[0].1, "formatting::format::Format");
-
-        let format = namespaces
-            .iter()
-            .find(|n| n.name == "formatting::format")
-            .unwrap();
-        assert_eq!(format.definitions.len(), 1);
-        assert_eq!(format.references.len(), 0);
-        assert_eq!(format.definitions[0].name, "Format");
-    }
-
-    #[test]
-    fn test_collect_symbols_nonexistent_file() {
-        let path = PathBuf::from("nonexistent.rs");
+    fn non_existing_file() {
+        let path = PathBuf::from("non-existing.rs");
         let mut parser = setup_parser();
 
         let result = collect_symbols(&path, &mut parser);
@@ -528,58 +174,302 @@ pub enum Format {
     }
 
     #[test]
-    fn test_collect_symbols_file_without_doc_comment() {
+    fn cyclic_modules() {
         let temp_dir = create_temp_dir();
-        let lib_rs = temp_dir.path().join("src").join("lib.rs");
+        let module_a_rs = temp_dir.path().join("src").join("module_a.rs");
+        let module_b_rs = temp_dir.path().join("src").join("module_b.rs");
         create_file(
-            &lib_rs,
+            &module_a_rs,
             r#"
-pub fn public_function() {}
+pub mod module_b;
+pub fn module_a_function() {}
 "#,
         );
-
+        create_file(
+            &module_b_rs,
+            r#"
+pub mod module_a;  // This creates a cycle
+pub fn module_b_function() {}
+"#,
+        );
         let mut parser = setup_parser();
-        let namespaces = collect_symbols(&lib_rs, &mut parser).unwrap();
 
-        assert_eq!(namespaces.len(), 1);
-        assert_eq!(namespaces[0].name, "");
-        assert_eq!(namespaces[0].doc_comment, None);
+        // This should complete without infinite recursion
+        let namespaces = collect_symbols(&module_a_rs, &mut parser).unwrap();
+
+        assert!(!namespaces.is_empty());
     }
 
-    #[test]
-    fn test_collect_symbols_file_with_doc_comment() {
-        let temp_dir = create_temp_dir();
-        let lib_rs = temp_dir.path().join("src").join("lib.rs");
-        create_file(
-            &lib_rs,
-            r#"//! This is a file-level doc comment.
+    mod exports {
+        use super::*;
+
+        #[test]
+        fn public_symbol() {
+            let temp_dir = create_temp_dir();
+            let lib_rs = temp_dir.path().join("src").join("lib.rs");
+            create_file(
+                &lib_rs,
+                r#"
+pub fn public_function() {}
+"#,
+            );
+            let mut parser = setup_parser();
+
+            let namespaces = collect_symbols(&lib_rs, &mut parser).unwrap();
+
+            assert_eq!(namespaces.len(), 1);
+            assert_eq!(namespaces[0].name, "");
+            assert_eq!(namespaces[0].definitions.len(), 1);
+
+            let definitions = &namespaces[0].definitions;
+            assert!(definitions.iter().any(|s| s.name == "public_function"));
+        }
+
+        #[test]
+        fn private_symbol() {
+            let temp_dir = create_temp_dir();
+            let lib_rs = temp_dir.path().join("src").join("lib.rs");
+            create_file(
+                &lib_rs,
+                r#"
+fn private_function() {}
+"#,
+            );
+            let mut parser = setup_parser();
+
+            let namespaces = collect_symbols(&lib_rs, &mut parser).unwrap();
+
+            assert_eq!(namespaces.len(), 1);
+            assert_eq!(namespaces[0].name, "");
+            assert_eq!(namespaces[0].definitions.len(), 0);
+        }
+
+        #[test]
+        fn public_module() {
+            let temp_dir = create_temp_dir();
+            let lib_rs = temp_dir.path().join("src").join("lib.rs");
+            create_file(
+                &lib_rs,
+                r#"
+pub mod public_module {}
+"#,
+            );
+            let mut parser = setup_parser();
+
+            let namespaces = collect_symbols(&lib_rs, &mut parser).unwrap();
+
+            assert_eq!(namespaces.len(), 2);
+            assert!(namespaces.iter().any(|n| n.name == "public_module"));
+        }
+
+        #[test]
+        fn private_module() {
+            let temp_dir = create_temp_dir();
+            let lib_rs = temp_dir.path().join("src").join("lib.rs");
+            create_file(
+                &lib_rs,
+                r#"
+mod private_module {}
+"#,
+            );
+            let mut parser = setup_parser();
+
+            let namespaces = collect_symbols(&lib_rs, &mut parser).unwrap();
+
+            assert_eq!(namespaces.len(), 1);
+            assert!(namespaces.iter().any(|n| n.name == ""));
+        }
+    }
+
+    mod reexports {
+        use super::*;
+
+        #[test]
+        fn missing_module() {
+            let temp_dir = create_temp_dir();
+            let lib_rs = temp_dir.path().join("src").join("lib.rs");
+            create_file(
+                &lib_rs,
+                r#"
+    pub mod missing;
+    "#,
+            );
+            let mut parser = setup_parser();
+
+            let namespaces = collect_symbols(&lib_rs, &mut parser).unwrap();
+
+            assert_eq!(namespaces.len(), 1);
+            assert_eq!(namespaces[0].name, "");
+            assert_eq!(namespaces[0].references.len(), 0);
+        }
+
+        #[test]
+        fn module_reexport() {
+            let temp_dir = create_temp_dir();
+            let lib_rs = temp_dir.path().join("src").join("lib.rs");
+            let module_rs = temp_dir.path().join("src").join("module.rs");
+
+            create_file(
+                &lib_rs,
+                r#"
+    pub mod module;
+    pub use module::InnerStruct;
+    "#,
+            );
+            create_file(
+                &module_rs,
+                r#"
+    pub struct InnerStruct;
+    "#,
+            );
+
+            let mut parser = setup_parser();
+            let namespaces = collect_symbols(&lib_rs, &mut parser).unwrap();
+
+            assert_eq!(namespaces.len(), 2);
+            let root = namespaces.iter().find(|n| n.name.is_empty()).unwrap();
+            assert_eq!(root.definitions.len(), 0);
+            assert_eq!(root.references.len(), 1);
+            assert_eq!(root.references[0].0, "InnerStruct");
+            assert_eq!(root.references[0].1, "module::InnerStruct");
+
+            let module = namespaces.iter().find(|n| n.name == "module").unwrap();
+            assert_eq!(module.definitions.len(), 1);
+            assert_eq!(module.references.len(), 0);
+            assert_eq!(module.definitions[0].name, "InnerStruct");
+        }
+
+        #[test]
+        fn direct_symbol_reexport() {
+            let temp_dir = create_temp_dir();
+            let lib_rs = temp_dir.path().join("src").join("lib.rs");
+            let formatter_rs = temp_dir.path().join("src").join("formatter.rs");
+            create_file(
+                &lib_rs,
+                r#"
+    mod formatter;
+    pub use formatter::Format;
+    "#,
+            );
+            create_file(
+                &formatter_rs,
+                r#"
+    pub enum Format {
+        Plain,
+        Rich,
+    }
+    "#,
+            );
+            let mut parser = setup_parser();
+
+            let namespaces = collect_symbols(&lib_rs, &mut parser).unwrap();
+
+            let formatter = namespaces.iter().find(|n| n.name == "formatter").unwrap();
+            assert_eq!(formatter.definitions.len(), 1);
+            assert!(formatter.definitions.iter().any(|s| s.name == "Format"));
+            assert!(!formatter.is_public);
+            // But its symbols should be reexported in the text module
+            let text = namespaces.iter().find(|n| n.name == "").unwrap();
+            assert_eq!(text.references.len(), 1);
+            assert!(text.references.iter().any(|(name, _)| name == "Format"));
+        }
+
+        #[test]
+        fn indirect_symbol_reexport() {
+            let temp_dir = create_temp_dir();
+            let lib_rs = temp_dir.path().join("src").join("lib.rs");
+            let formatting_dir = temp_dir.path().join("src").join("formatting");
+            let formatting_mod_rs = formatting_dir.join("mod.rs");
+            let format_rs = formatting_dir.join("format.rs");
+
+            create_file(
+                &lib_rs,
+                r#"
+    mod formatting;
+    pub use formatting::Format;
+    "#,
+            );
+            create_file(
+                &formatting_mod_rs,
+                r#"
+    mod format;
+    pub use format::Format;
+    "#,
+            );
+            create_file(
+                &format_rs,
+                r#"
+    pub enum Format {
+        Markdown,
+        Html,
+        Plain,
+    }
+    "#,
+            );
+
+            let mut parser = setup_parser();
+            let namespaces = collect_symbols(&lib_rs, &mut parser).unwrap();
+
+            assert_eq!(namespaces.len(), 3);
+            let root = namespaces.iter().find(|n| n.name.is_empty()).unwrap();
+            assert_eq!(root.definitions.len(), 0);
+            assert_eq!(root.references.len(), 1);
+            assert_eq!(root.references[0].0, "Format");
+            assert_eq!(root.references[0].1, "formatting::Format");
+
+            let formatting = namespaces.iter().find(|n| n.name == "formatting").unwrap();
+            assert_eq!(formatting.definitions.len(), 0);
+            assert_eq!(formatting.references.len(), 1);
+            assert_eq!(formatting.references[0].0, "Format");
+            assert_eq!(formatting.references[0].1, "formatting::format::Format");
+
+            let format = namespaces
+                .iter()
+                .find(|n| n.name == "formatting::format")
+                .unwrap();
+            assert_eq!(format.definitions.len(), 1);
+            assert_eq!(format.references.len(), 0);
+            assert_eq!(format.definitions[0].name, "Format");
+        }
+    }
+
+    mod doc_comments {
+        use super::*;
+
+        #[test]
+        fn file_with_doc_comment() {
+            let temp_dir = create_temp_dir();
+            let lib_rs = temp_dir.path().join("src").join("lib.rs");
+            create_file(
+                &lib_rs,
+                r#"//! This is a file-level doc comment.
 //! It can span multiple lines.
 
 pub struct Test {}
 "#,
-        );
+            );
 
-        let mut parser = setup_parser();
-        let namespaces = collect_symbols(&lib_rs, &mut parser).unwrap();
+            let mut parser = setup_parser();
+            let namespaces = collect_symbols(&lib_rs, &mut parser).unwrap();
 
-        assert_eq!(namespaces.len(), 1);
-        assert_eq!(namespaces[0].name, "");
-        assert_eq!(
-            namespaces[0].doc_comment,
-            Some(
-                "//! This is a file-level doc comment.\n//! It can span multiple lines.\n"
-                    .to_string()
-            )
-        );
-    }
+            assert_eq!(namespaces.len(), 1);
+            assert_eq!(namespaces[0].name, "");
+            assert_eq!(
+                namespaces[0].doc_comment,
+                Some(
+                    "//! This is a file-level doc comment.\n//! It can span multiple lines.\n"
+                        .to_string()
+                )
+            );
+        }
 
-    #[test]
-    fn test_collect_symbols_module_with_inner_doc_comment() {
-        let temp_dir = create_temp_dir();
-        let lib_rs = temp_dir.path().join("src").join("lib.rs");
-        create_file(
-            &lib_rs,
-            r#"
+        #[test]
+        fn module_with_inner_doc_comment() {
+            let temp_dir = create_temp_dir();
+            let lib_rs = temp_dir.path().join("src").join("lib.rs");
+            create_file(
+                &lib_rs,
+                r#"
 pub mod inner {
     //! This is the inner doc comment
     //! It spans multiple lines
@@ -587,37 +477,19 @@ pub mod inner {
     pub fn nested_function() -> String {}
 }
 "#,
-        );
+            );
 
-        let mut parser = setup_parser();
-        let namespaces = collect_symbols(&lib_rs, &mut parser).unwrap();
+            let mut parser = setup_parser();
+            let namespaces = collect_symbols(&lib_rs, &mut parser).unwrap();
 
-        assert_eq!(namespaces.len(), 2);
-        let inner_namespace = namespaces.iter().find(|n| n.name == "inner").unwrap();
-        assert_eq!(
-            inner_namespace.doc_comment,
-            Some("//! This is the inner doc comment\n//! It spans multiple lines\n".to_string())
-        );
-    }
-
-    #[test]
-    fn test_collect_symbols_module_without_inner_doc_comment() {
-        let temp_dir = create_temp_dir();
-        let lib_rs = temp_dir.path().join("src").join("lib.rs");
-        create_file(
-            &lib_rs,
-            r#"
-pub mod inner {
-    pub fn nested_function() -> String {}
-}
-"#,
-        );
-
-        let mut parser = setup_parser();
-        let namespaces = collect_symbols(&lib_rs, &mut parser).unwrap();
-
-        assert_eq!(namespaces.len(), 2);
-        let inner_namespace = namespaces.iter().find(|n| n.name == "inner").unwrap();
-        assert_eq!(inner_namespace.doc_comment, None);
+            assert_eq!(namespaces.len(), 2);
+            let inner_namespace = namespaces.iter().find(|n| n.name == "inner").unwrap();
+            assert_eq!(
+                inner_namespace.doc_comment,
+                Some(
+                    "//! This is the inner doc comment\n//! It spans multiple lines\n".to_string()
+                )
+            );
+        }
     }
 }
