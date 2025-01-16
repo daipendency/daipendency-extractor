@@ -87,6 +87,7 @@ use inner::Format;
 "#;
         let tree = make_tree(source_code);
         let use_declaration = find_child_node(tree.root_node(), "use_declaration");
+
         let symbols = extract_reexports(&use_declaration, source_code).unwrap();
 
         assert!(symbols.is_empty());
@@ -99,6 +100,7 @@ pub use inner::Format;
 "#;
         let tree = make_tree(source_code);
         let use_declaration = tree.root_node().child(0).unwrap();
+
         let symbols = extract_reexports(&use_declaration, source_code).unwrap();
 
         let symbol = get_symbol("Format", &symbols);
