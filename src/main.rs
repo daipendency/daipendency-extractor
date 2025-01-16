@@ -15,7 +15,7 @@ fn main() {
     match generate_documentation(language, &path) {
         Ok(output) => println!("{}", output),
         Err(e) => {
-            eprintln!("Error: {}", e);
+            eprintln!("Error: {:?}", e);
             std::process::exit(1);
         }
     }
