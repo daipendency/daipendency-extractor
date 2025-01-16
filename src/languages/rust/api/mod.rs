@@ -32,7 +32,7 @@ mod tests {
     const STUB_CRATE_NAME: &str = "test_crate";
 
     #[test]
-    fn test_nonexistent_file() {
+    fn nonexistent_file() {
         let mut parser = setup_parser();
         let path = std::path::PathBuf::from("nonexistent.rs");
 
@@ -42,7 +42,7 @@ mod tests {
     }
 
     #[test]
-    fn test_integration() {
+    fn integration() {
         let temp_dir = create_temp_dir();
         let lib_rs = temp_dir.path().join("src").join("lib.rs");
         let module_rs = temp_dir.path().join("src").join("module.rs");

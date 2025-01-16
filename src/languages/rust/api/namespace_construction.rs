@@ -53,7 +53,7 @@ mod tests {
     const STUB_CRATE_NAME: &str = "test_crate";
 
     #[test]
-    fn test_construct_namespaces_root_only() {
+    fn construct_namespaces_root_only() {
         let resolved_symbols = vec![ResolvedSymbol {
             symbol: Symbol {
                 name: "test".to_string(),
@@ -79,7 +79,7 @@ mod tests {
         use super::*;
 
         #[test]
-        fn test_construct_namespaces_without_doc_comment() {
+        fn construct_namespaces_without_doc_comment() {
             let resolved_symbols = vec![ResolvedSymbol {
                 symbol: Symbol {
                     name: "Format".to_string(),
@@ -106,7 +106,7 @@ mod tests {
         }
 
         #[test]
-        fn test_construct_namespaces_with_doc_comments() {
+        fn construct_namespaces_with_doc_comments() {
             let mut doc_comments = HashMap::new();
             doc_comments.insert("text".to_string(), "Text processing module".to_string());
 
@@ -139,7 +139,7 @@ mod tests {
         }
 
         #[test]
-        fn test_construct_namespaces_root_with_doc_comment() {
+        fn construct_namespaces_root_with_doc_comment() {
             let mut doc_comments = HashMap::new();
             doc_comments.insert("".to_string(), "Root module documentation".to_string());
 
@@ -168,7 +168,7 @@ mod tests {
     }
 
     #[test]
-    fn test_construct_namespaces_with_modules() {
+    fn construct_namespaces_with_modules() {
         let resolved_symbols = vec![
             ResolvedSymbol {
                 symbol: Symbol {
@@ -211,7 +211,7 @@ mod tests {
     }
 
     #[test]
-    fn test_construct_namespaces_nested_modules() {
+    fn construct_namespaces_nested_modules() {
         let resolved_symbols = vec![
             ResolvedSymbol {
                 symbol: Symbol {
@@ -254,7 +254,7 @@ mod tests {
     }
 
     #[test]
-    fn test_construct_namespaces_multiple_symbols_per_namespace() {
+    fn construct_namespaces_multiple_symbols_per_namespace() {
         let resolved_symbols = vec![
             ResolvedSymbol {
                 symbol: Symbol {
@@ -313,7 +313,7 @@ mod tests {
     }
 
     #[test]
-    fn test_construct_namespaces_reexported_symbols() {
+    fn construct_namespaces_reexported_symbols() {
         let resolved_symbols = vec![
             ResolvedSymbol {
                 symbol: Symbol {
@@ -370,7 +370,7 @@ mod tests {
     }
 
     #[test]
-    fn test_construct_namespaces_empty_input() {
+    fn construct_namespaces_empty_input() {
         let resolved_symbols = Vec::new();
         let namespaces = construct_namespaces(
             SymbolResolution {
@@ -385,7 +385,7 @@ mod tests {
     }
 
     #[test]
-    fn test_construct_namespaces_preserve_source_code() {
+    fn construct_namespaces_preserve_source_code() {
         let source_code = "pub struct Config {\n    pub name: String,\n    pub value: i32,\n}";
         let resolved_symbols = vec![ResolvedSymbol {
             symbol: Symbol {

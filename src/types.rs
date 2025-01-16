@@ -31,7 +31,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_get_symbol_found() {
+    fn get_symbol_found() {
         let symbol = Symbol {
             name: "test_symbol".to_string(),
             source_code: "fn test() {}".to_string(),
@@ -54,7 +54,7 @@ mod tests {
     }
 
     #[test]
-    fn test_get_symbol_not_found() {
+    fn get_symbol_not_found() {
         let namespace = Namespace {
             name: "test_namespace".to_string(),
             symbols: vec![],
@@ -68,7 +68,7 @@ mod tests {
     }
 
     #[test]
-    fn test_get_missing_symbol() {
+    fn get_missing_symbol() {
         let symbol_name = "missing_symbol".to_string();
         let symbol = Symbol {
             name: symbol_name.clone(),

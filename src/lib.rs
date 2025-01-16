@@ -42,7 +42,7 @@ mod tests {
     use std::path::PathBuf;
 
     #[test]
-    fn test_unsupported_language() {
+    fn unsupported_language() {
         let result = generate_documentation("unsupported", &PathBuf::new());
         assert!(matches!(result, Err(LaibraryError::UnsupportedLanguage(_))));
     }

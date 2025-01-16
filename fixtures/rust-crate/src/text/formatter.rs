@@ -165,13 +165,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_uppercase() {
+    fn uppercase() {
         let formatter = TextFormatter::new(Format::Uppercase);
         assert_eq!(formatter.format("hello").unwrap(), "HELLO");
     }
 
     #[test]
-    fn test_empty_input() {
+    fn empty_input() {
         let formatter = TextFormatter::new(Format::Uppercase);
         assert!(matches!(
             formatter.format(""),
@@ -180,7 +180,7 @@ mod tests {
     }
 
     #[test]
-    fn test_capitalise() {
+    fn capitalise() {
         let formatter = TextFormatter::new(Format::Capitalise);
         assert_eq!(formatter.format("hello world").unwrap(), "Hello World");
         assert_eq!(

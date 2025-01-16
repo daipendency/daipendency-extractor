@@ -86,7 +86,7 @@ path = "{}"
     }
 
     #[test]
-    fn test_extract_metadata_valid_crate() {
+    fn extract_metadata_valid_crate() {
         let temp_dir = TempDir::new().unwrap();
         create_test_crate(temp_dir.path(), None).unwrap();
 
@@ -100,14 +100,14 @@ path = "{}"
     }
 
     #[test]
-    fn test_missing_cargo_toml() {
+    fn missing_cargo_toml() {
         let temp_dir = TempDir::new().unwrap();
         let result = extract_metadata(temp_dir.path());
         assert!(matches!(result, Err(LaibraryError::Parse(_))));
     }
 
     #[test]
-    fn test_invalid_cargo_toml() {
+    fn invalid_cargo_toml() {
         let temp_dir = TempDir::new().unwrap();
         fs::write(temp_dir.path().join("Cargo.toml"), "invalid toml content").unwrap();
 
@@ -116,7 +116,7 @@ path = "{}"
     }
 
     #[test]
-    fn test_missing_package_section() {
+    fn missing_package_section() {
         let temp_dir = TempDir::new().unwrap();
         fs::write(
             temp_dir.path().join("Cargo.toml"),
@@ -129,7 +129,7 @@ path = "{}"
     }
 
     #[test]
-    fn test_missing_readme() {
+    fn missing_readme() {
         let temp_dir = TempDir::new().unwrap();
         create_test_crate(temp_dir.path(), None).unwrap();
         fs::remove_file(temp_dir.path().join(README_PATH)).unwrap();
@@ -143,7 +143,7 @@ path = "{}"
         use super::*;
 
         #[test]
-        fn test_default_entry_point() {
+        fn default_entry_point() {
             let temp_dir = TempDir::new().unwrap();
 
             create_test_crate(temp_dir.path(), None).unwrap();
@@ -153,7 +153,7 @@ path = "{}"
         }
 
         #[test]
-        fn test_custom_entry_point() {
+        fn custom_entry_point() {
             let temp_dir = TempDir::new().unwrap();
             let custom_lib_path = "src/custom_lib.rs";
 

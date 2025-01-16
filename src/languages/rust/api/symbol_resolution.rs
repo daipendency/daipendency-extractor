@@ -139,7 +139,7 @@ mod tests {
     use crate::types::Symbol;
 
     #[test]
-    fn test_resolve_symbols_simple() {
+    fn resolve_symbols_simple() {
         let raw_namespaces = vec![RawNamespace {
             name: String::new(),
             definitions: vec![Symbol {
@@ -158,7 +158,7 @@ mod tests {
     }
 
     #[test]
-    fn test_resolve_symbols_with_reference() {
+    fn resolve_symbols_with_reference() {
         let raw_namespaces = vec![
             RawNamespace {
                 name: String::new(),
@@ -198,7 +198,7 @@ mod tests {
     }
 
     #[test]
-    fn test_resolve_symbols_missing_reference() {
+    fn resolve_symbols_missing_reference() {
         let raw_namespaces = vec![RawNamespace {
             name: String::new(),
             definitions: Vec::new(),
@@ -212,7 +212,7 @@ mod tests {
     }
 
     #[test]
-    fn test_resolve_symbols_reexport_chain() {
+    fn resolve_symbols_reexport_chain() {
         let raw_namespaces = vec![
             RawNamespace {
                 name: String::new(),
@@ -281,7 +281,7 @@ mod tests {
     }
 
     #[test]
-    fn test_resolve_symbols_multiple_reexports() {
+    fn resolve_symbols_multiple_reexports() {
         let raw_namespaces = vec![
             RawNamespace {
                 name: String::new(),
@@ -382,7 +382,7 @@ mod tests {
     }
 
     #[test]
-    fn test_resolve_symbols_circular_reference() {
+    fn resolve_symbols_circular_reference() {
         let raw_namespaces = vec![
             RawNamespace {
                 name: String::new(),
@@ -412,7 +412,7 @@ mod tests {
     }
 
     #[test]
-    fn test_resolve_symbols_through_private_module() {
+    fn resolve_symbols_through_private_module() {
         let raw_namespaces = vec![
             RawNamespace {
                 name: String::new(),
@@ -474,7 +474,7 @@ mod tests {
     }
 
     #[test]
-    fn test_resolve_symbols_without_doc_comment() {
+    fn resolve_symbols_without_doc_comment() {
         let raw_namespaces = vec![RawNamespace {
             name: "text".to_string(),
             definitions: vec![],
@@ -488,7 +488,7 @@ mod tests {
     }
 
     #[test]
-    fn test_resolve_symbols_with_doc_comment() {
+    fn resolve_symbols_with_doc_comment() {
         let raw_namespaces = vec![RawNamespace {
             name: "text".to_string(),
             definitions: vec![],

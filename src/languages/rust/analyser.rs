@@ -38,7 +38,7 @@ mod tests {
     use crate::test_helpers::create_temp_dir;
 
     #[test]
-    fn test_get_package_metadata() {
+    fn get_package_metadata() {
         let temp_dir = create_temp_dir();
         let cargo_toml = temp_dir.path().join("Cargo.toml");
         std::fs::write(
@@ -57,7 +57,7 @@ version = "0.1.0"
     }
 
     #[test]
-    fn test_extract_public_api() {
+    fn extract_public_api() {
         let temp_dir = create_temp_dir();
         let src_dir = temp_dir.path().join("src");
         std::fs::create_dir(&src_dir).unwrap();

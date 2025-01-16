@@ -36,7 +36,7 @@ mod tests {
     use tempfile::TempDir;
 
     #[test]
-    fn test_get_source_file_paths_errors_on_file() {
+    fn get_source_file_paths_errors_on_file() {
         let temp_dir = TempDir::new().unwrap();
         let file_path = temp_dir.path().join("test.txt");
         File::create(&file_path).unwrap();
@@ -50,7 +50,7 @@ mod tests {
     }
 
     #[test]
-    fn test_get_source_file_paths_finds_matching_extensions() {
+    fn get_source_file_paths_finds_matching_extensions() {
         let temp_dir = TempDir::new().unwrap();
 
         // Create test files
@@ -74,7 +74,7 @@ mod tests {
     }
 
     #[test]
-    fn test_get_source_file_paths_empty_directory() {
+    fn get_source_file_paths_empty_directory() {
         let temp_dir = TempDir::new().unwrap();
 
         let paths = get_source_file_paths(
@@ -87,7 +87,7 @@ mod tests {
     }
 
     #[test]
-    fn test_get_source_file_paths_multiple_extensions() {
+    fn get_source_file_paths_multiple_extensions() {
         let temp_dir = TempDir::new().unwrap();
 
         File::create(temp_dir.path().join("test1.rs")).unwrap();

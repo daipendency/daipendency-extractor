@@ -15,7 +15,7 @@ mod tests {
     use tree_sitter_rust::LANGUAGE;
 
     #[test]
-    fn test_get_parser_valid() {
+    fn get_parser_valid() {
         let result = get_parser(&LANGUAGE.into());
 
         assert!(result.is_ok());

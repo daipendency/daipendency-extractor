@@ -21,7 +21,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_get_analyser_rust() {
+    fn get_analyser_rust() {
         let analyser = get_analyser("rust").unwrap();
         assert_eq!(
             format!("{:?}", analyser.get_parser_language()),
@@ -30,7 +30,7 @@ mod tests {
     }
 
     #[test]
-    fn test_get_analyser_unsupported() {
+    fn get_analyser_unsupported() {
         let result = get_analyser("unsupported");
         assert!(matches!(result, Err(LaibraryError::UnsupportedLanguage(_))));
     }
