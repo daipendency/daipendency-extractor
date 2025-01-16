@@ -230,11 +230,11 @@ pub mod other;
 
             let rust_file = parse_rust_file(source_code, &mut parser).unwrap();
 
-            let symbol = match &rust_file.symbols[0] {
-                RustSymbol::ModuleDeclaration { name, .. } => name,
-                _ => panic!("Expected ModuleDeclaration variant"),
-            };
-            assert_eq!(symbol, "other");
+            let module_declaration = rust_file.get_symbol("other").unwrap();
+            assert!(matches!(
+                module_declaration,
+                RustSymbol::ModuleDeclaration { .. }
+            ));
         }
     }
 

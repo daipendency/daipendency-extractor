@@ -104,6 +104,7 @@ mod tests {
             let function = find_child_node(tree.root_node(), "function_item");
 
             let attributes = extract_attributes(&function, "fn test() {}").unwrap();
+
             assert!(attributes.is_empty());
         }
 
@@ -114,6 +115,7 @@ mod tests {
             let function = find_child_node(tree.root_node(), "function_item");
 
             let attributes = extract_attributes(&function, source).unwrap();
+
             assert_eq!(attributes, vec!["#[derive(Debug)]"]);
         }
 
@@ -124,6 +126,7 @@ mod tests {
             let function = find_child_node(tree.root_node(), "function_item");
 
             let attributes = extract_attributes(&function, source).unwrap();
+
             assert_eq!(attributes, vec!["#[derive(Debug)]", "#[cfg(test)]"]);
         }
 
@@ -135,6 +138,7 @@ mod tests {
             let function = find_child_node(tree.root_node(), "function_item");
 
             let attributes = extract_attributes(&function, source).unwrap();
+
             assert_eq!(
                 attributes,
                 vec!["#[cfg_attr(feature = \"serde\", derive(Serialize, Deserialize))]"]
@@ -151,6 +155,7 @@ mod tests {
             let function = find_child_node(tree.root_node(), "function_item");
 
             let name = extract_name(&function, "fn test_function() {}").unwrap();
+
             assert_eq!(name, "test_function");
         }
 
@@ -160,6 +165,7 @@ mod tests {
             let struct_node = find_child_node(tree.root_node(), "struct_item");
 
             let name = extract_name(&struct_node, "struct TestStruct {}").unwrap();
+
             assert_eq!(name, "TestStruct");
         }
 
@@ -169,6 +175,7 @@ mod tests {
             let enum_node = find_child_node(tree.root_node(), "enum_item");
 
             let name = extract_name(&enum_node, "enum TestEnum { A, B }").unwrap();
+
             assert_eq!(name, "TestEnum");
         }
 
@@ -178,6 +185,7 @@ mod tests {
             let trait_node = find_child_node(tree.root_node(), "trait_item");
 
             let name = extract_name(&trait_node, "trait TestTrait {}").unwrap();
+
             assert_eq!(name, "TestTrait");
         }
 
@@ -187,6 +195,7 @@ mod tests {
             let module_node = find_child_node(tree.root_node(), "mod_item");
 
             let name = extract_name(&module_node, "mod test_module {}").unwrap();
+
             assert_eq!(name, "test_module");
         }
 
@@ -196,6 +205,7 @@ mod tests {
             let comment = find_child_node(tree.root_node(), "line_comment");
 
             let result = extract_name(&comment, "// just a comment");
+
             assert!(result.is_err());
         }
     }
