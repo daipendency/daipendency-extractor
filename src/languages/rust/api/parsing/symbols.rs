@@ -65,20 +65,34 @@ pub fn get_symbol_source_code(node: Node, source_code: &str) -> Result<String, L
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::languages::rust::test_helpers::setup_parser;
+    use crate::{
+        languages::rust::api::parsing::test_helpers::make_tree,
+        treesitter_test_helpers::find_child_node,
+    };
 
     #[test]
     fn function_with_body() {
         let source_code = r#"pub fn test_function(x: i32) -> i32 {
             x + 42
         }"#;
-        let mut parser = setup_parser();
-        let tree = parser.parse(source_code, None).unwrap();
-        let function_node = tree.root_node().child(0).unwrap();
+        let tree = make_tree(source_code);
+        let function_node = find_child_node(tree.root_node(), "function_item");
 
         let result = get_symbol_source_code(function_node, source_code).unwrap();
 
         assert_eq!(result, "pub fn test_function(x: i32) -> i32;");
+    }
+
+    #[test]
+    fn symbol_with_attributes() {
+        let source_code = r#"#[cfg(test)]
+pub fn test_function(x: i32) -> i32 { 42 }"#;
+        let tree = make_tree(source_code);
+        let function_node = find_child_node(tree.root_node(), "function_item");
+
+        let result = get_symbol_source_code(function_node, source_code).unwrap();
+
+        assert_eq!(result, "#[cfg(test)]\npub fn test_function(x: i32) -> i32;");
     }
 
     #[test]
@@ -88,9 +102,8 @@ mod tests {
                 42
             }
         }"#;
-        let mut parser = setup_parser();
-        let tree = parser.parse(source_code, None).unwrap();
-        let trait_node = tree.root_node().child(0).unwrap();
+        let tree = make_tree(source_code);
+        let trait_node = find_child_node(tree.root_node(), "trait_item");
 
         let result = get_symbol_source_code(trait_node, source_code).unwrap();
 
@@ -106,9 +119,8 @@ mod tests {
             field1: i32,
             field2: String,
         }"#;
-        let mut parser = setup_parser();
-        let tree = parser.parse(source_code, None).unwrap();
-        let struct_node = tree.root_node().child(0).unwrap();
+        let tree = make_tree(source_code);
+        let struct_node = find_child_node(tree.root_node(), "struct_item");
 
         let result = get_symbol_source_code(struct_node, source_code).unwrap();
 
