@@ -9,17 +9,6 @@ pub fn construct_namespaces(
 ) -> Vec<Namespace> {
     let mut namespace_map: HashMap<String, Namespace> = HashMap::new();
 
-    // Create root namespace
-    namespace_map.insert(
-        crate_name.to_string(),
-        Namespace {
-            name: crate_name.to_string(),
-            symbols: Vec::new(),
-            missing_symbols: Vec::new(),
-            doc_comment: symbol_resolution.doc_comments.get("").cloned(),
-        },
-    );
-
     // Group symbols by namespace
     symbol_resolution
         .symbols
@@ -31,17 +20,15 @@ pub fn construct_namespaces(
                 } else {
                     format!("{}::{}", crate_name, module_path)
                 };
-
-                namespace_map
+                let namespace = namespace_map
                     .entry(namespace_name.clone())
                     .or_insert_with(|| Namespace {
                         name: namespace_name,
                         symbols: Vec::new(),
                         missing_symbols: Vec::new(),
                         doc_comment: symbol_resolution.doc_comments.get(module_path).cloned(),
-                    })
-                    .symbols
-                    .push(resolved_symbol.symbol.clone());
+                    });
+                namespace.symbols.push(resolved_symbol.symbol.clone());
             });
         });
 
@@ -50,8 +37,11 @@ pub fn construct_namespaces(
 
 #[cfg(test)]
 mod tests {
+    use assertables::assert_contains;
+
     use super::*;
     use crate::languages::rust::api::symbol_resolution::ResolvedSymbol;
+    use crate::test_helpers::get_namespace;
     use crate::types::Symbol;
 
     const STUB_CRATE_NAME: &str = "test_crate";
@@ -64,12 +54,21 @@ mod tests {
         }
     }
 
-    fn get_namespace<'a>(name: &str, namespaces: &'a [Namespace]) -> Option<&'a Namespace> {
-        namespaces.iter().find(|n| n.name == name)
+    #[test]
+    fn no_symbols_in_namespace() {
+        let namespaces = construct_namespaces(
+            SymbolResolution {
+                symbols: Vec::new(),
+                doc_comments: HashMap::new(),
+            },
+            STUB_CRATE_NAME,
+        );
+
+        assert_eq!(namespaces.len(), 0);
     }
 
     #[test]
-    fn root_namespace() {
+    fn one_symbol_in_namespace() {
         let symbol = stub_symbol(STUB_SYMBOL_NAME);
         let resolved_symbols = vec![ResolvedSymbol {
             symbol: symbol.clone(),
@@ -85,48 +84,54 @@ mod tests {
         );
 
         assert_eq!(namespaces.len(), 1);
-        let root = get_namespace(STUB_CRATE_NAME, &namespaces).unwrap();
-        assert_eq!(root.symbols.len(), 1);
-        assert_eq!(root.symbols[0].name, STUB_SYMBOL_NAME);
+        let namespace = get_namespace(STUB_CRATE_NAME, &namespaces).unwrap();
+        let namespace_symbol = namespace.get_symbol(STUB_SYMBOL_NAME).unwrap();
+        assert_eq!(namespace_symbol, &symbol);
     }
 
     #[test]
-    fn child_namespace_with_doc_comments() {
-        let module_name = "text";
-        let doc_comment = "Text processing module";
-        let mut doc_comments = HashMap::new();
-        doc_comments.insert(module_name.to_string(), doc_comment.to_string());
-        let resolved_symbols = vec![ResolvedSymbol {
-            symbol: stub_symbol(STUB_SYMBOL_NAME),
-            modules: vec![module_name.to_string()],
-        }];
+    fn multiple_symbols_in_namespace() {
+        let module_name = String::new();
+        let symbol1 = stub_symbol("first_symbol");
+        let symbol2 = stub_symbol("second_symbol");
+        let resolved_symbols = vec![
+            ResolvedSymbol {
+                symbol: symbol1.clone(),
+                modules: vec![module_name.clone()],
+            },
+            ResolvedSymbol {
+                symbol: symbol2.clone(),
+                modules: vec![module_name.clone()],
+            },
+        ];
 
         let namespaces = construct_namespaces(
             SymbolResolution {
                 symbols: resolved_symbols,
-                doc_comments,
+                doc_comments: HashMap::new(),
             },
             STUB_CRATE_NAME,
         );
 
-        let text_namespace = get_namespace(
-            &format!("{}::{}", STUB_CRATE_NAME, module_name),
-            &namespaces,
-        )
-        .unwrap();
-        assert_eq!(text_namespace.doc_comment.as_deref(), Some(doc_comment));
+        assert_eq!(namespaces.len(), 1);
+        let root = get_namespace(STUB_CRATE_NAME, &namespaces).unwrap();
+        assert_eq!(root.symbols.len(), 2);
+        assert_contains!(root.symbols, &symbol1);
+        assert_contains!(root.symbols, &symbol2);
     }
 
     #[test]
-    fn with_modules() {
+    fn different_symbols_across_namespaces() {
+        let symbol1 = stub_symbol(&format!("{}_root", STUB_SYMBOL_NAME));
+        let symbol2 = stub_symbol(&format!("{}_nested", STUB_SYMBOL_NAME));
         let resolved_symbols = vec![
             ResolvedSymbol {
-                symbol: stub_symbol(STUB_SYMBOL_NAME),
+                symbol: symbol1.clone(),
                 modules: vec![String::new()],
             },
             ResolvedSymbol {
-                symbol: stub_symbol(STUB_SYMBOL_NAME),
-                modules: vec!["module".to_string()],
+                symbol: symbol2.clone(),
+                modules: vec!["submodule".to_string()],
             },
         ];
 
@@ -140,48 +145,15 @@ mod tests {
         assert_eq!(namespaces.len(), 2);
 
         let root = get_namespace(STUB_CRATE_NAME, &namespaces).unwrap();
-        assert_eq!(root.symbols.len(), 1);
-        assert_eq!(root.symbols[0].name, STUB_SYMBOL_NAME);
-
-        let module = get_namespace(&format!("{}::module", STUB_CRATE_NAME), &namespaces).unwrap();
-        assert_eq!(module.symbols.len(), 1);
-        assert_eq!(module.symbols[0].name, STUB_SYMBOL_NAME);
-    }
-
-    #[test]
-    fn nested_modules() {
-        let resolved_symbols = vec![
-            ResolvedSymbol {
-                symbol: stub_symbol(STUB_SYMBOL_NAME),
-                modules: vec![String::new()],
-            },
-            ResolvedSymbol {
-                symbol: stub_symbol(STUB_SYMBOL_NAME),
-                modules: vec!["outer::inner".to_string()],
-            },
-        ];
-
-        let namespaces = construct_namespaces(
-            SymbolResolution {
-                symbols: resolved_symbols,
-                doc_comments: HashMap::new(),
-            },
-            STUB_CRATE_NAME,
-        );
-        assert_eq!(namespaces.len(), 2);
-
-        let root = get_namespace(STUB_CRATE_NAME, &namespaces).unwrap();
-        assert_eq!(root.symbols.len(), 1);
-        assert_eq!(root.symbols[0].name, STUB_SYMBOL_NAME);
+        assert_eq!(root.symbols, vec![symbol1]);
 
         let nested =
-            get_namespace(&format!("{}::outer::inner", STUB_CRATE_NAME), &namespaces).unwrap();
-        assert_eq!(nested.symbols.len(), 1);
-        assert_eq!(nested.symbols[0].name, STUB_SYMBOL_NAME);
+            get_namespace(&format!("{}::submodule", STUB_CRATE_NAME), &namespaces).unwrap();
+        assert_eq!(nested.symbols, vec![symbol2]);
     }
 
     #[test]
-    fn same_symbol_across_hierarchy() {
+    fn same_symbol_across_namespaces() {
         let symbol = stub_symbol(STUB_SYMBOL_NAME);
         let resolved_symbols = vec![ResolvedSymbol {
             symbol: symbol.clone(),
@@ -196,80 +168,33 @@ mod tests {
             STUB_CRATE_NAME,
         );
 
-        assert_eq!(namespaces.len(), 3);
+        assert_eq!(namespaces.len(), 2);
         let outer_namespace =
             get_namespace(&format!("{}::outer", STUB_CRATE_NAME), &namespaces).unwrap();
         let inner_namespace =
             get_namespace(&format!("{}::outer::inner", STUB_CRATE_NAME), &namespaces).unwrap();
-        assert_eq!(outer_namespace.symbols[0], symbol);
-        assert_eq!(inner_namespace.symbols[0], symbol);
+        assert_eq!(outer_namespace.symbols, vec![symbol.clone()]);
+        assert_eq!(inner_namespace.symbols, vec![symbol]);
     }
 
     #[test]
-    fn multiple_symbols_per_namespace() {
-        let module_name = String::new();
-        let resolved_symbols = vec![
-            ResolvedSymbol {
-                symbol: stub_symbol("first_symbol"),
-                modules: vec![module_name.clone()],
-            },
-            ResolvedSymbol {
-                symbol: stub_symbol("second_symbol"),
-                modules: vec![module_name.clone()],
-            },
-        ];
-
-        let namespaces = construct_namespaces(
-            SymbolResolution {
-                symbols: resolved_symbols,
-                doc_comments: HashMap::new(),
-            },
-            STUB_CRATE_NAME,
-        );
-        assert_eq!(namespaces.len(), 1);
-
-        let root = get_namespace(STUB_CRATE_NAME, &namespaces).unwrap();
-        assert_eq!(root.symbols.len(), 2);
-        assert_eq!(root.symbols[0].name, "first_symbol");
-        assert_eq!(root.symbols[1].name, "second_symbol");
-    }
-
-    #[test]
-    fn empty_input() {
-        let resolved_symbols = Vec::new();
-        let namespaces = construct_namespaces(
-            SymbolResolution {
-                symbols: resolved_symbols,
-                doc_comments: HashMap::new(),
-            },
-            STUB_CRATE_NAME,
-        );
-        assert_eq!(namespaces.len(), 1);
-        let root = get_namespace(STUB_CRATE_NAME, &namespaces).unwrap();
-        assert_eq!(root.symbols.len(), 0);
-    }
-
-    #[test]
-    fn preserve_source_code() {
-        let source_code = "pub struct Config {\n    pub name: String,\n    pub value: i32,\n}";
+    fn doc_comment() {
+        let doc_comment = "This is a stub doc comment";
         let resolved_symbols = vec![ResolvedSymbol {
-            symbol: Symbol {
-                name: "Config".to_string(),
-                source_code: source_code.to_string(),
-            },
+            symbol: stub_symbol(STUB_SYMBOL_NAME),
             modules: vec![String::new()],
         }];
 
         let namespaces = construct_namespaces(
             SymbolResolution {
                 symbols: resolved_symbols,
-                doc_comments: HashMap::new(),
+                doc_comments: HashMap::from([(String::new(), doc_comment.to_string())]),
             },
             STUB_CRATE_NAME,
         );
+
         assert_eq!(namespaces.len(), 1);
         let root = get_namespace(STUB_CRATE_NAME, &namespaces).unwrap();
-        assert_eq!(root.symbols.len(), 1);
-        assert_eq!(root.symbols[0].source_code, source_code);
+        assert_eq!(root.doc_comment, Some(doc_comment.to_string()));
     }
 }
