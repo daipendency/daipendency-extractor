@@ -26,25 +26,17 @@ pub fn extract_symbol_reexports(
 }
 
 fn extract_single_reexport(scoped: &Node, source_code: &str) -> Result<RustSymbol, LaibraryError> {
-    let mut scoped_cursor = scoped.walk();
-    let scoped_children: Vec<_> = scoped.children(&mut scoped_cursor).collect();
-
-    let mut path_parts = Vec::new();
-    for scoped_child in &scoped_children {
-        let text = scoped_child
-            .utf8_text(source_code.as_bytes())
-            .map_err(|e| LaibraryError::Parse(e.to_string()))?;
-        path_parts.push(text);
-    }
-
-    let name = path_parts
-        .last()
-        .ok_or_else(|| LaibraryError::Parse("Empty path parts".to_string()))?;
-    let path = path_parts[..path_parts.len() - 1].join("");
-    Ok(RustSymbol::SymbolReexport {
-        name: name.to_string(),
-        source_path: format!("{}{}", path, name),
-    })
+    let mut cursor = scoped.walk();
+    let source_path = scoped
+        .children(&mut cursor)
+        .map(|child| {
+            child
+                .utf8_text(source_code.as_bytes())
+                .map_err(|e| LaibraryError::Parse(e.to_string()))
+        })
+        .collect::<Result<Vec<_>, _>>()?
+        .join("");
+    Ok(RustSymbol::SymbolReexport { source_path })
 }
 
 fn extract_multi_reexports(
@@ -75,7 +67,6 @@ fn extract_multi_reexports(
                 .utf8_text(source_code.as_bytes())
                 .map_err(|e| LaibraryError::Parse(e.to_string()))?;
             Ok(RustSymbol::SymbolReexport {
-                name: name.to_string(),
                 source_path: format!("{}::{}", path_prefix, name),
             })
         })
@@ -87,13 +78,16 @@ mod tests {
     use super::*;
     use crate::languages::rust::api::parsing::test_helpers::make_tree;
     use crate::treesitter_test_helpers::find_child_node;
+    use assertables::assert_contains;
 
-    fn get_symbol(name: &str, symbols: &[RustSymbol]) -> RustSymbol {
+    fn get_reexports(symbols: &[RustSymbol]) -> Vec<String> {
         symbols
             .iter()
-            .find(|s| matches!(s, RustSymbol::SymbolReexport { name: n, .. } if n == name))
-            .expect("Symbol not found")
-            .clone()
+            .filter_map(|s| match s {
+                RustSymbol::SymbolReexport { source_path } => Some(source_path.clone()),
+                _ => None,
+            })
+            .collect()
     }
 
     #[test]
@@ -136,10 +130,8 @@ pub use inner::Format;
 
         let symbols = extract_symbol_reexports(&use_declaration, source_code).unwrap();
 
-        let symbol = get_symbol("Format", &symbols);
-        assert!(
-            matches!(symbol, RustSymbol::SymbolReexport { source_path, .. } if source_path == "inner::Format")
-        );
+        let reexports = get_reexports(&symbols);
+        assert_contains!(&reexports, &"inner::Format".to_string());
     }
 
     #[test]
@@ -152,13 +144,8 @@ pub use inner::{TextFormatter, OtherType};
 
         let symbols = extract_symbol_reexports(&use_declaration, source_code).unwrap();
 
-        let formatter = get_symbol("TextFormatter", &symbols);
-        assert!(
-            matches!(formatter, RustSymbol::SymbolReexport { source_path, .. } if source_path == "inner::TextFormatter")
-        );
-        let other = get_symbol("OtherType", &symbols);
-        assert!(
-            matches!(other, RustSymbol::SymbolReexport { source_path, .. } if source_path == "inner::OtherType")
-        );
+        let reexports = get_reexports(&symbols);
+        assert_contains!(&reexports, &"inner::TextFormatter".to_string());
+        assert_contains!(&reexports, &"inner::OtherType".to_string());
     }
 }

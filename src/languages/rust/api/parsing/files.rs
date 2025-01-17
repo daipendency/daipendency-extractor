@@ -21,7 +21,6 @@ pub enum RustSymbol {
         is_public: bool,
     },
     SymbolReexport {
-        name: String,
         source_path: String,
     },
 }
@@ -75,7 +74,9 @@ impl RustFile {
             RustSymbol::Symbol { symbol } => symbol.name == symbol_name,
             RustSymbol::Module { name, .. } => name == symbol_name,
             RustSymbol::ModuleDeclaration { name, .. } => name == symbol_name,
-            RustSymbol::SymbolReexport { name, .. } => name == symbol_name,
+            RustSymbol::SymbolReexport { source_path } => {
+                source_path.split("::").last().unwrap() == symbol_name
+            }
         })
     }
 }

@@ -41,18 +41,10 @@ mod tests {
 
     use super::*;
     use crate::languages::rust::api::symbol_resolution::ResolvedSymbol;
-    use crate::test_helpers::get_namespace;
-    use crate::types::Symbol;
+    use crate::test_helpers::{get_namespace, stub_symbol_with_name};
 
     const STUB_CRATE_NAME: &str = "test_crate";
     const STUB_SYMBOL_NAME: &str = "test";
-
-    fn stub_symbol(name: &str) -> Symbol {
-        Symbol {
-            name: name.to_string(),
-            source_code: format!("pub fn {}() {{}}", name).to_string(),
-        }
-    }
 
     #[test]
     fn no_symbols_in_namespace() {
@@ -69,7 +61,7 @@ mod tests {
 
     #[test]
     fn one_symbol_in_namespace() {
-        let symbol = stub_symbol(STUB_SYMBOL_NAME);
+        let symbol = stub_symbol_with_name(STUB_SYMBOL_NAME);
         let resolved_symbols = vec![ResolvedSymbol {
             symbol: symbol.clone(),
             modules: vec![String::new()],
@@ -92,8 +84,8 @@ mod tests {
     #[test]
     fn multiple_symbols_in_namespace() {
         let module_name = String::new();
-        let symbol1 = stub_symbol("first_symbol");
-        let symbol2 = stub_symbol("second_symbol");
+        let symbol1 = stub_symbol_with_name("first_symbol");
+        let symbol2 = stub_symbol_with_name("second_symbol");
         let resolved_symbols = vec![
             ResolvedSymbol {
                 symbol: symbol1.clone(),
@@ -122,8 +114,8 @@ mod tests {
 
     #[test]
     fn different_symbols_across_namespaces() {
-        let symbol1 = stub_symbol(&format!("{}_root", STUB_SYMBOL_NAME));
-        let symbol2 = stub_symbol(&format!("{}_nested", STUB_SYMBOL_NAME));
+        let symbol1 = stub_symbol_with_name(&format!("{}_root", STUB_SYMBOL_NAME));
+        let symbol2 = stub_symbol_with_name(&format!("{}_nested", STUB_SYMBOL_NAME));
         let resolved_symbols = vec![
             ResolvedSymbol {
                 symbol: symbol1.clone(),
@@ -154,7 +146,7 @@ mod tests {
 
     #[test]
     fn same_symbol_across_namespaces() {
-        let symbol = stub_symbol(STUB_SYMBOL_NAME);
+        let symbol = stub_symbol_with_name(STUB_SYMBOL_NAME);
         let resolved_symbols = vec![ResolvedSymbol {
             symbol: symbol.clone(),
             modules: vec!["outer".to_string(), "outer::inner".to_string()],
@@ -181,7 +173,7 @@ mod tests {
     fn doc_comment() {
         let doc_comment = "This is a stub doc comment";
         let resolved_symbols = vec![ResolvedSymbol {
-            symbol: stub_symbol(STUB_SYMBOL_NAME),
+            symbol: stub_symbol_with_name(STUB_SYMBOL_NAME),
             modules: vec![String::new()],
         }];
 

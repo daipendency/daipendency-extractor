@@ -7,10 +7,10 @@ use tree_sitter::Parser;
 use super::parsing;
 
 #[derive(Debug, Clone)]
-pub struct RawNamespace {
+pub struct Module {
     pub name: String,
     pub definitions: Vec<Symbol>,
-    pub references: Vec<(String, String)>, // (name, source_path)
+    pub references: Vec<String>,
     pub is_public: bool,
     pub doc_comment: Option<String>,
 }
@@ -19,7 +19,7 @@ pub struct RawNamespace {
 pub fn collect_symbols(
     entry_point: &Path,
     parser: &mut Parser,
-) -> Result<Vec<RawNamespace>, LaibraryError> {
+) -> Result<Vec<Module>, LaibraryError> {
     let mut visited_files = HashMap::new();
     collect_symbols_recursive(entry_point, "", true, parser, &mut visited_files)
 }
@@ -30,7 +30,7 @@ fn collect_symbols_recursive(
     is_public: bool,
     parser: &mut Parser,
     visited_files: &mut HashMap<PathBuf, bool>,
-) -> Result<Vec<RawNamespace>, LaibraryError> {
+) -> Result<Vec<Module>, LaibraryError> {
     if visited_files.contains_key(&file_path.to_path_buf()) {
         return Ok(Vec::new());
     }
@@ -47,7 +47,7 @@ fn collect_symbols_recursive(
     let rust_file = parsing::parse_rust_file(&content, parser)?;
 
     let mut namespaces = Vec::new();
-    let mut current_namespace = RawNamespace {
+    let mut current_namespace = Module {
         name: namespace_prefix.to_string(),
         definitions: Vec::new(),
         references: Vec::new(),
@@ -75,7 +75,7 @@ fn collect_symbols_recursive(
                     },
                     name
                 );
-                let mut module_raw_namespace = RawNamespace {
+                let mut module_raw_namespace = Module {
                     name: module_namespace.clone(),
                     definitions: Vec::new(),
                     references: Vec::new(),
@@ -115,16 +115,14 @@ fn collect_symbols_recursive(
                     namespaces.append(&mut child_namespaces);
                 }
             }
-            parsing::RustSymbol::SymbolReexport {
-                name, source_path, ..
-            } => {
+            parsing::RustSymbol::SymbolReexport { source_path } => {
                 let source_path = if namespace_prefix.is_empty() {
                     source_path.clone()
                 } else {
                     format!("{}::{}", namespace_prefix, source_path)
                 };
 
-                current_namespace.references.push((name, source_path));
+                current_namespace.references.push(source_path);
             }
         }
     }
@@ -330,8 +328,7 @@ mod private_module {}
             let root = namespaces.iter().find(|n| n.name.is_empty()).unwrap();
             assert_eq!(root.definitions.len(), 0);
             assert_eq!(root.references.len(), 1);
-            assert_eq!(root.references[0].0, "InnerStruct");
-            assert_eq!(root.references[0].1, "module::InnerStruct");
+            assert_eq!(root.references[0], "module::InnerStruct");
 
             let module = namespaces.iter().find(|n| n.name == "module").unwrap();
             assert_eq!(module.definitions.len(), 1);
@@ -371,7 +368,10 @@ mod private_module {}
             // But its symbols should be reexported in the text module
             let text = namespaces.iter().find(|n| n.name == "").unwrap();
             assert_eq!(text.references.len(), 1);
-            assert!(text.references.iter().any(|(name, _)| name == "Format"));
+            assert!(text
+                .references
+                .iter()
+                .any(|path| path == "formatter::Format"));
         }
 
         #[test]
@@ -414,14 +414,12 @@ mod private_module {}
             let root = namespaces.iter().find(|n| n.name.is_empty()).unwrap();
             assert_eq!(root.definitions.len(), 0);
             assert_eq!(root.references.len(), 1);
-            assert_eq!(root.references[0].0, "Format");
-            assert_eq!(root.references[0].1, "formatting::Format");
+            assert_eq!(root.references[0], "formatting::Format");
 
             let formatting = namespaces.iter().find(|n| n.name == "formatting").unwrap();
             assert_eq!(formatting.definitions.len(), 0);
             assert_eq!(formatting.references.len(), 1);
-            assert_eq!(formatting.references[0].0, "Format");
-            assert_eq!(formatting.references[0].1, "formatting::format::Format");
+            assert_eq!(formatting.references[0], "formatting::format::Format");
 
             let format = namespaces
                 .iter()
