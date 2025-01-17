@@ -14,7 +14,7 @@ pub struct Namespace {
     pub doc_comment: Option<String>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Symbol {
     pub name: String,
     pub source_code: String,
