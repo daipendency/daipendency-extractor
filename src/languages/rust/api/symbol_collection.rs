@@ -21,10 +21,10 @@ pub fn collect_symbols(
     parser: &mut Parser,
 ) -> Result<Vec<Module>, LaibraryError> {
     let mut visited_files = HashMap::new();
-    collect_symbols_recursive(entry_point, "", true, parser, &mut visited_files)
+    collect_symbols_recursively(entry_point, "", true, parser, &mut visited_files)
 }
 
-fn collect_symbols_recursive(
+fn collect_symbols_recursively(
     file_path: &Path,
     namespace_prefix: &str,
     is_public: bool,
@@ -46,16 +46,36 @@ fn collect_symbols_recursive(
     visited_files.insert(file_path.to_path_buf(), true);
     let rust_file = parsing::parse_rust_file(&content, parser)?;
 
-    let mut namespaces = Vec::new();
+    collect_module_symbols(
+        rust_file.symbols,
+        namespace_prefix,
+        is_public,
+        file_path,
+        parser,
+        visited_files,
+        rust_file.doc_comment,
+    )
+}
+
+fn collect_module_symbols(
+    content: Vec<parsing::RustSymbol>,
+    namespace_prefix: &str,
+    is_public: bool,
+    file_path: &Path,
+    parser: &mut Parser,
+    visited_files: &mut HashMap<PathBuf, bool>,
+    doc_comment: Option<String>,
+) -> Result<Vec<Module>, LaibraryError> {
+    let mut modules = Vec::new();
     let mut current_namespace = Module {
         name: namespace_prefix.to_string(),
         definitions: Vec::new(),
         references: Vec::new(),
         is_public,
-        doc_comment: rust_file.doc_comment,
+        doc_comment,
     };
 
-    for symbol in rust_file.symbols {
+    for symbol in content {
         match symbol {
             parsing::RustSymbol::Symbol { symbol } => {
                 current_namespace.definitions.push(symbol.clone());
@@ -65,29 +85,17 @@ fn collect_symbols_recursive(
                 content,
                 doc_comment,
             } => {
-                let module_namespace = format!(
-                    "{}{}{}",
-                    namespace_prefix,
-                    if namespace_prefix.is_empty() {
-                        ""
-                    } else {
-                        "::"
-                    },
-                    name
-                );
-                let mut module_raw_namespace = Module {
-                    name: module_namespace.clone(),
-                    definitions: Vec::new(),
-                    references: Vec::new(),
+                let module_namespace = prefix_namespace(&name, namespace_prefix);
+                let mut nested_modules = collect_module_symbols(
+                    content,
+                    &module_namespace,
                     is_public,
+                    file_path,
+                    parser,
+                    visited_files,
                     doc_comment,
-                };
-                for symbol in content {
-                    if let parsing::RustSymbol::Symbol { symbol } = symbol {
-                        module_raw_namespace.definitions.push(symbol.clone());
-                    }
-                }
-                namespaces.push(module_raw_namespace);
+                )?;
+                modules.append(&mut nested_modules);
             }
             parsing::RustSymbol::ModuleDeclaration {
                 name,
@@ -95,40 +103,26 @@ fn collect_symbols_recursive(
                 ..
             } => {
                 if let Ok(module_path) = resolve_module_path(file_path, &name) {
-                    let module_namespace = format!(
-                        "{}{}{}",
-                        namespace_prefix,
-                        if namespace_prefix.is_empty() {
-                            ""
-                        } else {
-                            "::"
-                        },
-                        name
-                    );
-                    let mut child_namespaces = collect_symbols_recursive(
+                    let module_namespace = prefix_namespace(&name, namespace_prefix);
+                    let mut child_namespaces = collect_symbols_recursively(
                         &module_path,
                         &module_namespace,
                         module_is_public,
                         parser,
                         visited_files,
                     )?;
-                    namespaces.append(&mut child_namespaces);
+                    modules.append(&mut child_namespaces);
                 }
             }
             parsing::RustSymbol::SymbolReexport { source_path } => {
-                let source_path = if namespace_prefix.is_empty() {
-                    source_path.clone()
-                } else {
-                    format!("{}::{}", namespace_prefix, source_path)
-                };
-
+                let source_path = prefix_namespace(&source_path, namespace_prefix);
                 current_namespace.references.push(source_path);
             }
         }
     }
 
-    namespaces.push(current_namespace);
-    Ok(namespaces)
+    modules.push(current_namespace);
+    Ok(modules)
 }
 
 fn resolve_module_path(current_file: &Path, module_name: &str) -> Result<PathBuf, LaibraryError> {
@@ -154,6 +148,14 @@ fn resolve_module_path(current_file: &Path, module_name: &str) -> Result<PathBuf
         module_name,
         current_file.display()
     )))
+}
+
+fn prefix_namespace(name: &str, namespace: &str) -> String {
+    if namespace.is_empty() {
+        name.to_string()
+    } else {
+        format!("{}::{}", namespace, name)
+    }
 }
 
 #[cfg(test)]
@@ -193,9 +195,9 @@ pub fn module_b_function() {}
         let mut parser = setup_parser();
 
         // This should complete without infinite recursion
-        let namespaces = collect_symbols(&module_a_rs, &mut parser).unwrap();
+        let modules = collect_symbols(&module_a_rs, &mut parser).unwrap();
 
-        assert!(!namespaces.is_empty());
+        assert!(!modules.is_empty());
     }
 
     mod exports {
@@ -213,13 +215,13 @@ pub fn public_function() {}
             );
             let mut parser = setup_parser();
 
-            let namespaces = collect_symbols(&lib_rs, &mut parser).unwrap();
+            let modules = collect_symbols(&lib_rs, &mut parser).unwrap();
 
-            assert_eq!(namespaces.len(), 1);
-            assert_eq!(namespaces[0].name, "");
-            assert_eq!(namespaces[0].definitions.len(), 1);
+            assert_eq!(modules.len(), 1);
+            assert_eq!(modules[0].name, "");
+            assert_eq!(modules[0].definitions.len(), 1);
 
-            let definitions = &namespaces[0].definitions;
+            let definitions = &modules[0].definitions;
             assert!(definitions.iter().any(|s| s.name == "public_function"));
         }
 
@@ -235,11 +237,11 @@ fn private_function() {}
             );
             let mut parser = setup_parser();
 
-            let namespaces = collect_symbols(&lib_rs, &mut parser).unwrap();
+            let modules = collect_symbols(&lib_rs, &mut parser).unwrap();
 
-            assert_eq!(namespaces.len(), 1);
-            assert_eq!(namespaces[0].name, "");
-            assert_eq!(namespaces[0].definitions.len(), 0);
+            assert_eq!(modules.len(), 1);
+            assert_eq!(modules[0].name, "");
+            assert_eq!(modules[0].definitions.len(), 0);
         }
 
         #[test]
@@ -254,10 +256,10 @@ pub mod public_module {}
             );
             let mut parser = setup_parser();
 
-            let namespaces = collect_symbols(&lib_rs, &mut parser).unwrap();
+            let modules = collect_symbols(&lib_rs, &mut parser).unwrap();
 
-            assert_eq!(namespaces.len(), 2);
-            assert!(namespaces.iter().any(|n| n.name == "public_module"));
+            assert_eq!(modules.len(), 2);
+            assert!(modules.iter().any(|n| n.name == "public_module"));
         }
 
         #[test]
@@ -272,14 +274,16 @@ mod private_module {}
             );
             let mut parser = setup_parser();
 
-            let namespaces = collect_symbols(&lib_rs, &mut parser).unwrap();
+            let modules = collect_symbols(&lib_rs, &mut parser).unwrap();
 
-            assert_eq!(namespaces.len(), 1);
-            assert!(namespaces.iter().any(|n| n.name == ""));
+            assert_eq!(modules.len(), 1);
+            assert!(modules.iter().any(|n| n.name == ""));
         }
     }
 
     mod reexports {
+        use crate::languages::rust::api::test_helpers::get_module;
+
         use super::*;
 
         #[test]
@@ -294,11 +298,11 @@ mod private_module {}
             );
             let mut parser = setup_parser();
 
-            let namespaces = collect_symbols(&lib_rs, &mut parser).unwrap();
+            let modules = collect_symbols(&lib_rs, &mut parser).unwrap();
 
-            assert_eq!(namespaces.len(), 1);
-            assert_eq!(namespaces[0].name, "");
-            assert_eq!(namespaces[0].references.len(), 0);
+            assert_eq!(modules.len(), 1);
+            assert_eq!(modules[0].name, "");
+            assert_eq!(modules[0].references.len(), 0);
         }
 
         #[test]
@@ -322,15 +326,15 @@ mod private_module {}
             );
 
             let mut parser = setup_parser();
-            let namespaces = collect_symbols(&lib_rs, &mut parser).unwrap();
+            let modules = collect_symbols(&lib_rs, &mut parser).unwrap();
 
-            assert_eq!(namespaces.len(), 2);
-            let root = namespaces.iter().find(|n| n.name.is_empty()).unwrap();
+            assert_eq!(modules.len(), 2);
+            let root = get_module("", &modules).unwrap();
             assert_eq!(root.definitions.len(), 0);
             assert_eq!(root.references.len(), 1);
             assert_eq!(root.references[0], "module::InnerStruct");
 
-            let module = namespaces.iter().find(|n| n.name == "module").unwrap();
+            let module = get_module("module", &modules).unwrap();
             assert_eq!(module.definitions.len(), 1);
             assert_eq!(module.references.len(), 0);
             assert_eq!(module.definitions[0].name, "InnerStruct");
@@ -359,14 +363,14 @@ mod private_module {}
             );
             let mut parser = setup_parser();
 
-            let namespaces = collect_symbols(&lib_rs, &mut parser).unwrap();
+            let modules = collect_symbols(&lib_rs, &mut parser).unwrap();
 
-            let formatter = namespaces.iter().find(|n| n.name == "formatter").unwrap();
+            let formatter = get_module("formatter", &modules).unwrap();
             assert_eq!(formatter.definitions.len(), 1);
             assert!(formatter.definitions.iter().any(|s| s.name == "Format"));
             assert!(!formatter.is_public);
             // But its symbols should be reexported in the text module
-            let text = namespaces.iter().find(|n| n.name == "").unwrap();
+            let text = get_module("", &modules).unwrap();
             assert_eq!(text.references.len(), 1);
             assert!(text
                 .references
@@ -408,26 +412,50 @@ mod private_module {}
             );
 
             let mut parser = setup_parser();
-            let namespaces = collect_symbols(&lib_rs, &mut parser).unwrap();
+            let modules = collect_symbols(&lib_rs, &mut parser).unwrap();
 
-            assert_eq!(namespaces.len(), 3);
-            let root = namespaces.iter().find(|n| n.name.is_empty()).unwrap();
+            assert_eq!(modules.len(), 3);
+            let root = get_module("", &modules).unwrap();
             assert_eq!(root.definitions.len(), 0);
             assert_eq!(root.references.len(), 1);
             assert_eq!(root.references[0], "formatting::Format");
 
-            let formatting = namespaces.iter().find(|n| n.name == "formatting").unwrap();
+            let formatting = get_module("formatting", &modules).unwrap();
             assert_eq!(formatting.definitions.len(), 0);
             assert_eq!(formatting.references.len(), 1);
             assert_eq!(formatting.references[0], "formatting::format::Format");
 
-            let format = namespaces
-                .iter()
-                .find(|n| n.name == "formatting::format")
-                .unwrap();
+            let format = get_module("formatting::format", &modules).unwrap();
             assert_eq!(format.definitions.len(), 1);
             assert_eq!(format.references.len(), 0);
             assert_eq!(format.definitions[0].name, "Format");
+        }
+
+        #[test]
+        fn nested_modules_symbol_reexport() {
+            let temp_dir = create_temp_dir();
+            let lib_rs = temp_dir.path().join("src").join("lib.rs");
+            create_file(
+                &lib_rs,
+                r#"
+pub mod child {
+    pub mod grandchild {
+        pub enum Format {
+            Plain,
+            Rich,
+        }
+    }
+}
+"#,
+            );
+            let mut parser = setup_parser();
+
+            let modules = collect_symbols(&lib_rs, &mut parser).unwrap();
+
+            let grandchild = get_module("child::grandchild", &modules).unwrap();
+            assert_eq!(grandchild.definitions.len(), 1);
+            let enum_definition = grandchild.definitions.iter().find(|s| s.name == "Format");
+            assert!(enum_definition.is_some());
         }
     }
 
@@ -448,12 +476,12 @@ pub struct Test {}
             );
 
             let mut parser = setup_parser();
-            let namespaces = collect_symbols(&lib_rs, &mut parser).unwrap();
+            let modules = collect_symbols(&lib_rs, &mut parser).unwrap();
 
-            assert_eq!(namespaces.len(), 1);
-            assert_eq!(namespaces[0].name, "");
+            assert_eq!(modules.len(), 1);
+            assert_eq!(modules[0].name, "");
             assert_eq!(
-                namespaces[0].doc_comment,
+                modules[0].doc_comment,
                 Some(
                     "//! This is a file-level doc comment.\n//! It can span multiple lines.\n"
                         .to_string()
@@ -478,10 +506,10 @@ pub mod inner {
             );
 
             let mut parser = setup_parser();
-            let namespaces = collect_symbols(&lib_rs, &mut parser).unwrap();
+            let modules = collect_symbols(&lib_rs, &mut parser).unwrap();
 
-            assert_eq!(namespaces.len(), 2);
-            let inner_namespace = namespaces.iter().find(|n| n.name == "inner").unwrap();
+            assert_eq!(modules.len(), 2);
+            let inner_namespace = modules.iter().find(|n| n.name == "inner").unwrap();
             assert_eq!(
                 inner_namespace.doc_comment,
                 Some(
