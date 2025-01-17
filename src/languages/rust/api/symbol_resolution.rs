@@ -42,11 +42,7 @@ pub fn resolve_symbols(modules: &[Module]) -> Result<SymbolResolution, LaibraryE
                 format!("{}::{}", module.name, symbol.name)
             };
             symbol_map.insert(qualified_name.clone(), symbol.clone());
-            let modules = if module.name.is_empty() {
-                vec![String::new()]
-            } else {
-                module.name.split("::").map(String::from).collect()
-            };
+            let modules = vec![module.name.clone()];
             module_map.entry(qualified_name).or_insert(modules);
         }
         for source_path in &module.references {
@@ -72,11 +68,7 @@ pub fn resolve_symbols(modules: &[Module]) -> Result<SymbolResolution, LaibraryE
             let mut visited = Vec::new();
             match resolve_reference(source_path, &reference_map, &symbol_map, &mut visited) {
                 Ok(_symbol) => {
-                    let current_modules = if module.name.is_empty() {
-                        vec![String::new()]
-                    } else {
-                        module.name.split("::").map(String::from).collect()
-                    };
+                    let current_modules = vec![module.name.clone()];
                     if let Some(modules) = module_map.get_mut(source_path) {
                         *modules = modules
                             .iter()
@@ -140,24 +132,47 @@ mod tests {
     use super::*;
     use crate::types::Symbol;
 
-    #[test]
-    fn symbol_definition() {
-        let modules = vec![Module {
-            name: String::new(),
-            definitions: vec![Symbol {
-                name: "test".to_string(),
-                source_code: "pub fn test() {}".to_string(),
-            }],
-            references: Vec::new(),
-            is_public: true,
-            doc_comment: None,
-        }];
+    mod symbol_definitions {
+        use super::*;
+        use crate::test_helpers::stub_symbol;
 
-        let resolution = resolve_symbols(&modules).unwrap();
+        #[test]
+        fn at_root() {
+            let modules = vec![Module {
+                name: String::new(),
+                definitions: vec![Symbol {
+                    name: "test".to_string(),
+                    source_code: "pub fn test() {}".to_string(),
+                }],
+                references: Vec::new(),
+                is_public: true,
+                doc_comment: None,
+            }];
 
-        assert_eq!(resolution.symbols.len(), 1);
-        assert_eq!(resolution.symbols[0].symbol.name, "test");
-        assert_eq!(resolution.symbols[0].modules, vec![String::new()]);
+            let resolution = resolve_symbols(&modules).unwrap();
+
+            assert_eq!(resolution.symbols.len(), 1);
+            assert_eq!(resolution.symbols[0].symbol.name, "test");
+            assert_eq!(resolution.symbols[0].modules, vec![String::new()]);
+        }
+
+        #[test]
+        fn at_submodule() {
+            let symbol = stub_symbol();
+            let modules = vec![Module {
+                name: "outer::inner".to_string(),
+                definitions: vec![symbol.clone()],
+                references: Vec::new(),
+                is_public: true,
+                doc_comment: None,
+            }];
+
+            let resolution = resolve_symbols(&modules).unwrap();
+
+            assert_eq!(resolution.symbols.len(), 1);
+            let resolved_symbol = &resolution.symbols[0];
+            assert_eq!(resolved_symbol.modules, vec!["outer::inner"]);
+        }
     }
 
     mod symbol_references {
@@ -222,6 +237,35 @@ mod tests {
             let resolved_symbol = &resolution.symbols[0];
             assert_eq!(resolved_symbol.modules, vec![String::new()]);
             assert_eq!(resolved_symbol.symbol, symbol);
+        }
+
+        #[test]
+        fn via_nested_public_module() {
+            let symbol = stub_symbol();
+            let modules = vec![
+                Module {
+                    name: "foo::bar".to_string(),
+                    definitions: Vec::new(),
+                    references: vec!["outer::inner::test".to_string()],
+                    is_public: true,
+                    doc_comment: None,
+                },
+                Module {
+                    name: "outer::inner".to_string(),
+                    definitions: vec![symbol.clone()],
+                    references: Vec::new(),
+                    is_public: true,
+                    doc_comment: None,
+                },
+            ];
+
+            let resolution = resolve_symbols(&modules).unwrap();
+
+            assert_eq!(resolution.symbols.len(), 1);
+            let resolved_symbol = &resolution.symbols[0];
+            assert_eq!(resolved_symbol.symbol, symbol);
+            assert_contains!(&resolved_symbol.modules, &"foo::bar".to_string());
+            assert_contains!(&resolved_symbol.modules, &"outer::inner".to_string());
         }
 
         #[test]
