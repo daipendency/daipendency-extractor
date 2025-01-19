@@ -338,38 +338,28 @@ mod tests {
 
             let result = resolve_symbols(&modules);
 
-            assert!(matches!(result, Err(LaibraryError::Parse(_))));
+            assert!(matches!(
+                result,
+                Err(LaibraryError::Parse(msg)) if msg == "Could not resolve symbol reference 'missing::test'"
+            ));
         }
 
         #[test]
-        fn circular_reference() {
-            let modules = vec![
-                Module {
-                    name: String::new(),
-                    definitions: Vec::new(),
-                    references: vec!["a::test".to_string()],
-                    is_public: true,
-                    doc_comment: None,
-                },
-                Module {
-                    name: "a".to_string(),
-                    definitions: Vec::new(),
-                    references: vec!["b::test".to_string()],
-                    is_public: true,
-                    doc_comment: None,
-                },
-                Module {
-                    name: "b".to_string(),
-                    definitions: Vec::new(),
-                    references: vec!["a::test".to_string()],
-                    is_public: true,
-                    doc_comment: None,
-                },
-            ];
+        fn self_referential_symbol() {
+            let modules = vec![Module {
+                name: String::new(),
+                definitions: Vec::new(),
+                references: vec!["test".to_string()],
+                is_public: true,
+                doc_comment: None,
+            }];
 
             let result = resolve_symbols(&modules);
 
-            assert!(matches!(result, Err(LaibraryError::Parse(_))));
+            assert!(matches!(
+                result,
+                Err(LaibraryError::Parse(msg)) if msg == "Circular reference detected while resolving 'test'"
+            ));
         }
     }
 
