@@ -80,8 +80,20 @@ pub fn resolve_symbols(modules: &[Module]) -> Result<SymbolResolution, LaibraryE
         })
         .collect();
 
+    // Only include symbols that are either defined in public modules or referenced through public modules
+    let public_symbols = resolved_symbols
+        .into_values()
+        .filter(|symbol| {
+            symbol.modules.iter().any(|module_name| {
+                public_modules.iter().any(|public_module| {
+                    &public_module.name == module_name
+                })
+            })
+        })
+        .collect();
+
     Ok(SymbolResolution {
-        symbols: resolved_symbols.into_values().collect(),
+        symbols: public_symbols,
         doc_comments,
     })
 }
@@ -168,7 +180,7 @@ mod tests {
     mod reexports {
         use assertables::assert_contains;
 
-        use crate::test_helpers::stub_symbol;
+        use crate::test_helpers::{stub_symbol, stub_symbol_with_name};
 
         use super::*;
 
@@ -256,6 +268,35 @@ mod tests {
             assert_eq!(resolved_symbol.symbol, symbol);
             assert_contains!(&resolved_symbol.modules, &"foo::bar".to_string());
             assert_contains!(&resolved_symbol.modules, &"outer::inner".to_string());
+        }
+
+        #[test]
+        fn partial_private_module_reexport() {
+            let reexported_symbol = stub_symbol_with_name("reexported");
+            let non_reexported_symbol = stub_symbol_with_name("non_reexported");
+            let modules = vec![
+                Module {
+                    name: String::new(),
+                    definitions: Vec::new(),
+                    references: vec![format!("inner::{}", reexported_symbol.name)],
+                    is_public: true,
+                    doc_comment: None,
+                },
+                Module {
+                    name: "inner".to_string(),
+                    definitions: vec![reexported_symbol.clone(), non_reexported_symbol],
+                    references: Vec::new(),
+                    is_public: false,
+                    doc_comment: None,
+                },
+            ];
+
+            let resolution = resolve_symbols(&modules).unwrap();
+
+            assert_eq!(resolution.symbols.len(), 1);
+            let resolved_symbol = &resolution.symbols[0];
+            assert_eq!(resolved_symbol.modules, vec![String::new()]);
+            assert_eq!(resolved_symbol.symbol, reexported_symbol);
         }
 
         #[test]
