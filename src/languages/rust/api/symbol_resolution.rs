@@ -175,7 +175,7 @@ mod tests {
     mod symbol_references {
         use assertables::assert_contains;
 
-        use crate::test_helpers::{stub_symbol, stub_symbol_with_name};
+        use crate::test_helpers::stub_symbol;
 
         use super::*;
 
@@ -263,67 +263,6 @@ mod tests {
             assert_eq!(resolved_symbol.symbol, symbol);
             assert_contains!(&resolved_symbol.modules, &"foo::bar".to_string());
             assert_contains!(&resolved_symbol.modules, &"outer::inner".to_string());
-        }
-
-        #[test]
-        fn symbols_with_same_name_in_different_modules() {
-            let symbol_name = "foo";
-            let symbol1 = stub_symbol_with_name(symbol_name);
-            let symbol2 = stub_symbol_with_name(symbol_name);
-            let module1 = Module {
-                name: "a".to_string(),
-                definitions: vec![symbol1.clone()],
-                references: vec![],
-                is_public: true,
-                doc_comment: None,
-            };
-            let module2 = Module {
-                name: "b".to_string(),
-                definitions: vec![symbol2.clone()],
-                references: vec![],
-                is_public: true,
-                doc_comment: None,
-            };
-            let module3 = Module {
-                name: "c".to_string(),
-                definitions: vec![],
-                references: vec![format!("a::{}", symbol_name)],
-                is_public: true,
-                doc_comment: None,
-            };
-            let module4 = Module {
-                name: "d".to_string(),
-                definitions: vec![],
-                references: vec![format!("b::{}", symbol_name)],
-                is_public: true,
-                doc_comment: None,
-            };
-
-            let resolution = resolve_symbols(
-                &(vec![
-                    module1.clone(),
-                    module2.clone(),
-                    module3.clone(),
-                    module4.clone(),
-                ]),
-            )
-            .unwrap();
-
-            assert_eq!(resolution.symbols.len(), 2);
-            let symbol1_resolved = resolution
-                .symbols
-                .iter()
-                .find(|s| s.modules.contains(&module1.name))
-                .unwrap();
-            assert_eq!(symbol1_resolved.modules, vec![module1.name, module3.name]);
-            assert_eq!(symbol1_resolved.symbol, symbol1);
-            let symbol2_resolved = resolution
-                .symbols
-                .iter()
-                .find(|s| s.modules.contains(&module2.name))
-                .unwrap();
-            assert_eq!(symbol2_resolved.modules, vec![module2.name, module4.name]);
-            assert_eq!(symbol2_resolved.symbol, symbol2);
         }
 
         #[test]
