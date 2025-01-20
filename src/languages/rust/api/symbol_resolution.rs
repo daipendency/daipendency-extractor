@@ -18,61 +18,46 @@ pub struct SymbolResolution {
 
 /// Resolve symbol references by matching them with their corresponding definitions.
 pub fn resolve_symbols(modules: &[Module]) -> Result<SymbolResolution, LaibraryError> {
-    let mut symbol_map: HashMap<String, Symbol> = HashMap::new();
+    let mut resolved_symbols: HashMap<String, ResolvedSymbol> = HashMap::new();
     let mut reference_map: HashMap<String, String> = HashMap::new();
-    let mut module_map: HashMap<String, Vec<String>> = HashMap::new();
-    let mut doc_comments = HashMap::new();
-    let mut public_module_paths = std::collections::HashSet::new();
 
-    // First pass: collect all symbol definitions and references
+    // First pass: collect all symbol definitions and references from ALL modules
     for module in modules {
-        // The root module and public modules are public
-        if module.name.is_empty() || module.is_public {
-            public_module_paths.insert(module.name.clone());
-
-            if let Some(doc_comment) = &module.doc_comment {
-                doc_comments.insert(module.name.clone(), doc_comment.clone());
-            }
-        }
-
         for symbol in &module.definitions {
-            let qualified_name = if module.name.is_empty() {
-                symbol.name.clone()
-            } else {
-                format!("{}::{}", module.name, symbol.name)
-            };
-            symbol_map.insert(qualified_name.clone(), symbol.clone());
-            let modules = vec![module.name.clone()];
-            module_map.entry(qualified_name).or_insert(modules);
+            let symbol_path = get_symbol_path(&symbol.name, module);
+            resolved_symbols.insert(
+                symbol_path.clone(),
+                ResolvedSymbol {
+                    symbol: symbol.clone(),
+                    modules: vec![module.name.clone()],
+                },
+            );
         }
         for source_path in &module.references {
-            let symbol_name = source_path.split("::").last().unwrap().to_string();
-            let qualified_path = if module.name.is_empty() {
-                symbol_name.clone()
-            } else {
-                format!("{}::{}", module.name, source_path)
-            };
-            reference_map.insert(symbol_name, qualified_path);
+            let symbol_name = source_path.split("::").last().unwrap();
+            let symbol_path = get_symbol_path(symbol_name, module);
+            reference_map.insert(symbol_name.to_string(), symbol_path);
         }
     }
 
-    // Second pass: resolve references and collect symbols
-    let mut resolved_symbols = Vec::new();
-    for module in modules {
-        if !public_module_paths.contains(&module.name) {
-            continue;
-        }
+    let public_modules: Vec<&Module> = modules
+        .iter()
+        .filter(|m| m.name.is_empty() || m.is_public)
+        .collect();
 
+    // Second pass: resolve references and collect symbols
+    for module in &public_modules {
         // Resolve and add all references
         for source_path in &module.references {
             let mut visited = Vec::new();
-            match resolve_reference(source_path, &reference_map, &symbol_map, &mut visited) {
+            match resolve_reference(source_path, &reference_map, &resolved_symbols, &mut visited) {
                 Ok(_symbol) => {
                     let current_modules = vec![module.name.clone()];
-                    if let Some(modules) = module_map.get_mut(source_path) {
-                        *modules = modules
+                    if let Some(resolved) = resolved_symbols.get_mut(source_path) {
+                        resolved.modules = resolved
+                            .modules
                             .iter()
-                            .filter(|m| m.is_empty() || public_module_paths.contains(*m))
+                            .filter(|m| public_modules.iter().any(|pm| &pm.name == *m))
                             .cloned()
                             .chain(current_modules)
                             .collect::<Vec<_>>();
@@ -85,26 +70,34 @@ pub fn resolve_symbols(modules: &[Module]) -> Result<SymbolResolution, LaibraryE
         }
     }
 
-    // Third pass: collect all symbols with their modules
-    for (qualified_name, symbol) in symbol_map {
-        if let Some(modules) = module_map.get(&qualified_name) {
-            resolved_symbols.push(ResolvedSymbol {
-                symbol,
-                modules: modules.clone(),
-            });
-        }
-    }
+    let doc_comments = public_modules
+        .iter()
+        .filter_map(|module| {
+            module
+                .doc_comment
+                .as_ref()
+                .map(|doc| (module.name.clone(), doc.clone()))
+        })
+        .collect();
 
     Ok(SymbolResolution {
-        symbols: resolved_symbols,
+        symbols: resolved_symbols.into_values().collect(),
         doc_comments,
     })
+}
+
+fn get_symbol_path(symbol_name: &str, module: &Module) -> String {
+    if module.name.is_empty() {
+        symbol_name.to_string()
+    } else {
+        format!("{}::{}", module.name, symbol_name)
+    }
 }
 
 fn resolve_reference<'a>(
     path: &str,
     reference_map: &HashMap<String, String>,
-    symbol_map: &'a HashMap<String, Symbol>,
+    resolved_symbols: &'a HashMap<String, ResolvedSymbol>,
     visited: &mut Vec<String>,
 ) -> Result<&'a Symbol, LaibraryError> {
     if visited.contains(&path.to_string()) {
@@ -115,10 +108,10 @@ fn resolve_reference<'a>(
     }
     visited.push(path.to_string());
 
-    if let Some(symbol) = symbol_map.get(path) {
-        Ok(symbol)
+    if let Some(resolved) = resolved_symbols.get(path) {
+        Ok(&resolved.symbol)
     } else if let Some(next_path) = reference_map.get(path) {
-        resolve_reference(next_path, reference_map, symbol_map, visited)
+        resolve_reference(next_path, reference_map, resolved_symbols, visited)
     } else {
         Err(LaibraryError::Parse(format!(
             "Could not resolve symbol reference '{}'",
@@ -172,7 +165,7 @@ mod tests {
         }
     }
 
-    mod symbol_references {
+    mod reexports {
         use assertables::assert_contains;
 
         use crate::test_helpers::stub_symbol;
