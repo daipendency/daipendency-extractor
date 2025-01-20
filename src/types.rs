@@ -21,6 +21,7 @@ pub struct Symbol {
 }
 
 impl Namespace {
+    #[cfg(test)]
     pub fn get_symbol(&self, name: &str) -> Option<&Symbol> {
         self.symbols.iter().find(|s| s.name == name)
     }
