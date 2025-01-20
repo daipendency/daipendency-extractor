@@ -58,8 +58,9 @@ fn resolve_public_symbols(
         }
 
         for source_path in &module.references {
+            let normalised_path = normalise_reference(source_path, &module.name)?;
             references_by_symbol_path
-                .entry(source_path.to_string())
+                .entry(normalised_path)
                 .or_default()
                 .push(module.name.clone());
         }
@@ -104,6 +105,31 @@ fn get_symbol_path(symbol_name: &str, module: &Module) -> String {
         symbol_name.to_string()
     } else {
         format!("{}::{}", module.name, symbol_name)
+    }
+}
+
+fn normalise_reference(reference: &str, current_module: &str) -> Result<String, LaibraryError> {
+    if let Some(stripped) = reference.strip_prefix("crate::") {
+        Ok(stripped.to_string())
+    } else if let Some(stripped) = reference.strip_prefix("super::") {
+        if current_module.is_empty() {
+            return Err(LaibraryError::Parse(
+                "Cannot use super from the root module".to_string(),
+            ));
+        }
+        if let Some(parent) = current_module.rfind("::") {
+            Ok(format!("{}::{}", &current_module[..parent], stripped))
+        } else {
+            Ok(stripped.to_string())
+        }
+    } else if let Some(stripped) = reference.strip_prefix("self::") {
+        if current_module.is_empty() {
+            Ok(stripped.to_string())
+        } else {
+            Ok(format!("{}::{}", current_module, stripped))
+        }
+    } else {
+        Ok(reference.to_string())
     }
 }
 
@@ -363,6 +389,160 @@ mod tests {
             assert_set_eq!(
                 resolution.get_symbol_modules(bar_symbol),
                 vec!["bar".to_string(), "reexporter2".to_string()],
+            );
+        }
+
+        #[test]
+        fn crate_path_reference() {
+            let symbol = stub_symbol();
+            let modules = vec![
+                Module {
+                    name: String::new(),
+                    definitions: Vec::new(),
+                    references: vec!["crate::inner::test".to_string()],
+                    is_public: true,
+                    doc_comment: None,
+                },
+                Module {
+                    name: "inner".to_string(),
+                    definitions: vec![symbol.clone()],
+                    references: Vec::new(),
+                    is_public: false,
+                    doc_comment: None,
+                },
+            ];
+
+            let resolution = resolve_symbols(&modules).unwrap();
+
+            assert_eq!(resolution.symbols.len(), 1);
+            assert_set_eq!(resolution.get_symbol_modules(symbol), vec![String::new()]);
+        }
+
+        #[test]
+        fn super_path_from_root() {
+            let modules = vec![Module {
+                name: String::new(),
+                definitions: Vec::new(),
+                references: vec!["super::test".to_string()],
+                is_public: true,
+                doc_comment: None,
+            }];
+
+            let result = resolve_symbols(&modules);
+
+            assert!(matches!(
+                result,
+                Err(LaibraryError::Parse(msg)) if msg == "Cannot use super from the root module"
+            ));
+        }
+
+        #[test]
+        fn super_path_from_child() {
+            let symbol = stub_symbol();
+            let modules = vec![
+                Module {
+                    name: "".to_string(),
+                    definitions: vec![symbol.clone()],
+                    references: Vec::new(),
+                    is_public: true,
+                    doc_comment: None,
+                },
+                Module {
+                    name: "child".to_string(),
+                    definitions: Vec::new(),
+                    references: vec!["super::test".to_string()],
+                    is_public: false,
+                    doc_comment: None,
+                },
+            ];
+
+            let resolution = resolve_symbols(&modules).unwrap();
+
+            assert_eq!(resolution.symbols.len(), 1);
+            assert_set_eq!(resolution.get_symbol_modules(symbol), vec!["".to_string()]);
+        }
+
+        #[test]
+        fn super_path_from_grandchild() {
+            let symbol = stub_symbol();
+            let modules = vec![
+                Module {
+                    name: "parent".to_string(),
+                    definitions: vec![symbol.clone()],
+                    references: Vec::new(),
+                    is_public: true,
+                    doc_comment: None,
+                },
+                Module {
+                    name: "parent::child".to_string(),
+                    definitions: Vec::new(),
+                    references: vec!["super::test".to_string()],
+                    is_public: false,
+                    doc_comment: None,
+                },
+            ];
+
+            let resolution = resolve_symbols(&modules).unwrap();
+
+            assert_eq!(resolution.symbols.len(), 1);
+            assert_set_eq!(
+                resolution.get_symbol_modules(symbol),
+                vec!["parent".to_string()]
+            );
+        }
+
+        #[test]
+        fn self_path_from_root() {
+            let symbol = stub_symbol();
+            let modules = vec![
+                Module {
+                    name: "".to_string(),
+                    definitions: Vec::new(),
+                    references: vec!["self::child::test".to_string()],
+                    is_public: true,
+                    doc_comment: None,
+                },
+                Module {
+                    name: "child".to_string(),
+                    definitions: vec![symbol.clone()],
+                    references: Vec::new(),
+                    is_public: false,
+                    doc_comment: None,
+                },
+            ];
+
+            let resolution = resolve_symbols(&modules).unwrap();
+
+            assert_eq!(resolution.symbols.len(), 1);
+            assert_set_eq!(resolution.get_symbol_modules(symbol), vec!["".to_string()]);
+        }
+
+        #[test]
+        fn self_path_from_child() {
+            let symbol = stub_symbol();
+            let modules = vec![
+                Module {
+                    name: "module".to_string(),
+                    definitions: Vec::new(),
+                    references: vec!["self::inner::test".to_string()],
+                    is_public: true,
+                    doc_comment: None,
+                },
+                Module {
+                    name: "module::inner".to_string(),
+                    definitions: vec![symbol.clone()],
+                    references: Vec::new(),
+                    is_public: false,
+                    doc_comment: None,
+                },
+            ];
+
+            let resolution = resolve_symbols(&modules).unwrap();
+
+            assert_eq!(resolution.symbols.len(), 1);
+            assert_set_eq!(
+                resolution.get_symbol_modules(symbol),
+                vec!["module".to_string()]
             );
         }
     }
