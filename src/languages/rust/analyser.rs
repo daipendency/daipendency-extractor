@@ -75,7 +75,7 @@ pub fn test_function() -> i32 {
         let analyser = RustAnalyser::new();
         let metadata = PackageMetadata {
             name: "test_crate".to_string(),
-            version: "0.1.0".to_string(),
+            version: Some("0.1.0".to_string()),
             documentation: String::new(),
             entry_point: lib_rs,
         };

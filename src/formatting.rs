@@ -20,7 +20,7 @@ library_version: {version}
 
 {api_content}"#,
         name = metadata.name,
-        version = metadata.version,
+        version = metadata.version.as_deref().unwrap_or("null"),
         documentation = metadata.documentation.trim()
     ))
 }
@@ -80,7 +80,7 @@ mod tests {
     fn create_metadata() -> PackageMetadata {
         PackageMetadata {
             name: STUB_LIBRARY_NAME.to_string(),
-            version: STUB_LIBRARY_VERSION.to_string(),
+            version: Some(STUB_LIBRARY_VERSION.to_string()),
             documentation: STUB_DOCUMENTATION.to_string(),
             entry_point: std::path::PathBuf::from("src/lib.rs"),
         }
@@ -113,7 +113,7 @@ mod tests {
         }
 
         #[test]
-        fn library_version() {
+        fn with_library_version() {
             let metadata = create_metadata();
 
             let documentation = format_library_context(&metadata, &[], STUB_LANGUAGE).unwrap();
@@ -123,6 +123,17 @@ mod tests {
                 frontmatter_lines,
                 &format!("library_version: {STUB_LIBRARY_VERSION}")
             );
+        }
+
+        #[test]
+        fn without_library_version() {
+            let mut metadata = create_metadata();
+            metadata.version = None;
+            let documentation = format_library_context(&metadata, &[], STUB_LANGUAGE).unwrap();
+
+            let frontmatter_lines = get_frontmatter_lines(documentation).unwrap();
+
+            assert_contains!(frontmatter_lines, &"library_version: null".to_string());
         }
 
         #[test]

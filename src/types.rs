@@ -1,7 +1,7 @@
 #[derive(Debug)]
 pub struct PackageMetadata {
     pub name: String,
-    pub version: String,
+    pub version: Option<String>,
     pub documentation: String,
     pub entry_point: std::path::PathBuf,
 }
