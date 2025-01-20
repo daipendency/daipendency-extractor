@@ -18,11 +18,33 @@ pub fn extract_symbol_reexports(
         Ok(vec![extract_single_reexport(scoped, source_code)?])
     } else if let Some(scoped_list) = children.iter().find(|c| c.kind() == "scoped_use_list") {
         extract_multi_reexports(scoped_list, source_code)
+    } else if let Some(wildcard) = children.iter().find(|c| c.kind() == "use_wildcard") {
+        extract_wildcard_reexport(wildcard, source_code)
     } else {
         Err(LaibraryError::Parse(
             "Failed to find symbol reexport".to_string(),
         ))
     }
+}
+
+fn extract_wildcard_reexport(
+    wildcard: &Node,
+    source_code: &str,
+) -> Result<Vec<RustSymbol>, LaibraryError> {
+    let mut cursor = wildcard.walk();
+    let children: Vec<_> = wildcard.children(&mut cursor).collect();
+    let module_path = children
+        .iter()
+        .find(|c| c.kind() == "identifier")
+        .ok_or_else(|| {
+            LaibraryError::Parse("Failed to find module path in wildcard import".to_string())
+        })?
+        .utf8_text(source_code.as_bytes())
+        .map_err(|e| LaibraryError::Parse(e.to_string()))?;
+    Ok(vec![RustSymbol::SymbolReexport {
+        source_path: module_path.to_string(),
+        is_wildcard: true,
+    }])
 }
 
 fn extract_single_reexport(scoped: &Node, source_code: &str) -> Result<RustSymbol, LaibraryError> {
@@ -36,7 +58,10 @@ fn extract_single_reexport(scoped: &Node, source_code: &str) -> Result<RustSymbo
         })
         .collect::<Result<Vec<_>, _>>()?
         .join("");
-    Ok(RustSymbol::SymbolReexport { source_path })
+    Ok(RustSymbol::SymbolReexport {
+        source_path,
+        is_wildcard: false,
+    })
 }
 
 fn extract_multi_reexports(
@@ -68,6 +93,7 @@ fn extract_multi_reexports(
                 .map_err(|e| LaibraryError::Parse(e.to_string()))?;
             Ok(RustSymbol::SymbolReexport {
                 source_path: format!("{}::{}", path_prefix, name),
+                is_wildcard: false,
             })
         })
         .collect()
@@ -84,7 +110,7 @@ mod tests {
         symbols
             .iter()
             .filter_map(|s| match s {
-                RustSymbol::SymbolReexport { source_path } => Some(source_path.clone()),
+                RustSymbol::SymbolReexport { source_path, .. } => Some(source_path.clone()),
                 _ => None,
             })
             .collect()
@@ -147,5 +173,23 @@ pub use inner::{TextFormatter, OtherType};
         let reexports = get_reexports(&symbols);
         assert_contains!(&reexports, &"inner::TextFormatter".to_string());
         assert_contains!(&reexports, &"inner::OtherType".to_string());
+    }
+
+    #[test]
+    fn wildcard_reexport() {
+        let source_code = r#"
+pub use inner::*;
+"#;
+        let tree = make_tree(source_code);
+        let use_declaration = find_child_node(tree.root_node(), "use_declaration");
+
+        let symbols = extract_symbol_reexports(&use_declaration, source_code).unwrap();
+
+        assert_eq!(symbols.len(), 1);
+        assert!(matches!(
+            &symbols[0],
+            RustSymbol::SymbolReexport { source_path, is_wildcard }
+            if source_path == "inner" && *is_wildcard
+        ));
     }
 }

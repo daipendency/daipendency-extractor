@@ -10,9 +10,15 @@ use super::parsing;
 pub struct Module {
     pub name: String,
     pub definitions: Vec<Symbol>,
-    pub references: Vec<String>,
+    pub references: Vec<Reference>,
     pub is_public: bool,
     pub doc_comment: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Reference {
+    Symbol(String),
+    Wildcard(String),
 }
 
 /// Traverse the source files of the Rust crate and collect all symbols and symbol references (reexports).
@@ -114,9 +120,20 @@ fn collect_module_symbols(
                     modules.append(&mut child_namespaces);
                 }
             }
-            parsing::RustSymbol::SymbolReexport { source_path } => {
+            parsing::RustSymbol::SymbolReexport {
+                source_path,
+                is_wildcard,
+            } => {
                 let source_path = prefix_namespace(&source_path, namespace_prefix);
-                current_namespace.references.push(source_path);
+                if is_wildcard {
+                    current_namespace
+                        .references
+                        .push(Reference::Wildcard(source_path));
+                } else {
+                    current_namespace
+                        .references
+                        .push(Reference::Symbol(source_path));
+                }
             }
         }
     }
@@ -332,7 +349,10 @@ mod private_module {}
             let root = get_module("", &modules).unwrap();
             assert_eq!(root.definitions.len(), 0);
             assert_eq!(root.references.len(), 1);
-            assert_eq!(root.references[0], "module::InnerStruct");
+            assert_eq!(
+                root.references[0],
+                Reference::Symbol("module::InnerStruct".to_string())
+            );
 
             let module = get_module("module", &modules).unwrap();
             assert_eq!(module.definitions.len(), 1);
@@ -375,7 +395,7 @@ mod private_module {}
             assert!(text
                 .references
                 .iter()
-                .any(|path| path == "formatter::Format"));
+                .any(|path| path == &Reference::Symbol("formatter::Format".to_string())));
         }
 
         #[test]
@@ -418,12 +438,18 @@ mod private_module {}
             let root = get_module("", &modules).unwrap();
             assert_eq!(root.definitions.len(), 0);
             assert_eq!(root.references.len(), 1);
-            assert_eq!(root.references[0], "formatting::Format");
+            assert_eq!(
+                root.references[0],
+                Reference::Symbol("formatting::Format".to_string())
+            );
 
             let formatting = get_module("formatting", &modules).unwrap();
             assert_eq!(formatting.definitions.len(), 0);
             assert_eq!(formatting.references.len(), 1);
-            assert_eq!(formatting.references[0], "formatting::format::Format");
+            assert_eq!(
+                formatting.references[0],
+                Reference::Symbol("formatting::format::Format".to_string())
+            );
 
             let format = get_module("formatting::format", &modules).unwrap();
             assert_eq!(format.definitions.len(), 1);
@@ -456,6 +482,44 @@ pub mod child {
             assert_eq!(grandchild.definitions.len(), 1);
             let enum_definition = grandchild.definitions.iter().find(|s| s.name == "Format");
             assert!(enum_definition.is_some());
+        }
+
+        #[test]
+        fn wildcard_reexport() {
+            let temp_dir = create_temp_dir();
+            let lib_rs = temp_dir.path().join("src").join("lib.rs");
+            let module_rs = temp_dir.path().join("src").join("module.rs");
+
+            create_file(
+                &lib_rs,
+                r#"
+    mod module;
+    pub use module::*;
+    "#,
+            );
+            create_file(
+                &module_rs,
+                r#"
+    pub struct InnerStruct;
+    "#,
+            );
+
+            let mut parser = setup_parser();
+            let modules = collect_symbols(&lib_rs, &mut parser).unwrap();
+
+            assert_eq!(modules.len(), 2);
+            let root = get_module("", &modules).unwrap();
+            assert_eq!(root.definitions.len(), 0);
+            assert_eq!(root.references.len(), 1);
+            assert_eq!(
+                root.references[0],
+                Reference::Wildcard("module".to_string())
+            );
+
+            let module = get_module("module", &modules).unwrap();
+            assert_eq!(module.definitions.len(), 1);
+            assert_eq!(module.references.len(), 0);
+            assert_eq!(module.definitions[0].name, "InnerStruct");
         }
     }
 

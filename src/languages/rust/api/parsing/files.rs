@@ -22,6 +22,7 @@ pub enum RustSymbol {
     },
     SymbolReexport {
         source_path: String,
+        is_wildcard: bool,
     },
 }
 
@@ -74,7 +75,7 @@ impl RustFile {
             RustSymbol::Symbol { symbol } => symbol.name == symbol_name,
             RustSymbol::Module { name, .. } => name == symbol_name,
             RustSymbol::ModuleDeclaration { name, .. } => name == symbol_name,
-            RustSymbol::SymbolReexport { source_path } => {
+            RustSymbol::SymbolReexport { source_path, .. } => {
                 source_path.split("::").last().unwrap() == symbol_name
             }
         })

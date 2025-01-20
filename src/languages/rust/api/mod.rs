@@ -87,4 +87,34 @@ pub enum Format {
         assert_eq!(module.symbols.len(), 1);
         assert!(module.symbols.iter().any(|s| s.name == "Format"));
     }
+
+    #[test]
+    fn wildcard_reexport() {
+        let temp_dir = create_temp_dir();
+        let lib_rs = temp_dir.path().join("src").join("lib.rs");
+        let module_rs = temp_dir.path().join("src").join("module.rs");
+        create_file(
+            &lib_rs,
+            r#"
+mod module;
+pub use module::*;
+"#,
+        );
+        create_file(
+            &module_rs,
+            r#"
+pub struct One;
+pub struct Two;
+"#,
+        );
+        let mut parser = setup_parser();
+
+        let namespaces = build_public_api(&lib_rs, STUB_CRATE_NAME, &mut parser).unwrap();
+
+        assert_eq!(namespaces.len(), 1);
+        let root = &namespaces[0];
+        assert_eq!(root.symbols.len(), 2);
+        assert!(root.get_symbol("One").is_some());
+        assert!(root.get_symbol("Two").is_some());
+    }
 }
