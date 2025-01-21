@@ -11,9 +11,6 @@ pub fn find_child_nodes<'tree>(root: Node<'tree>, kind: &str) -> Vec<Node<'tree>
 
 pub fn find_child_node<'tree>(root: Node<'tree>, kind: &str) -> Node<'tree> {
     let nodes = find_child_nodes(root, kind);
-    match nodes.len() {
-        1 => nodes[0],
-        0 => panic!("No node found with kind {}", kind),
-        _ => panic!("Multiple nodes found with kind {}", kind),
-    }
+    assert_eq!(nodes.len(), 1);
+    nodes[0]
 }

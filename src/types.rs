@@ -28,6 +28,8 @@ impl Namespace {
 
 #[cfg(test)]
 mod tests {
+    use assertables::{assert_none, assert_some};
+
     use super::*;
 
     #[test]
@@ -44,12 +46,8 @@ mod tests {
 
         let found = namespace.get_symbol("test_symbol");
 
-        assert!(found.is_some(), "Should find existing symbol");
-        assert_eq!(
-            found.unwrap().name,
-            "test_symbol",
-            "Found symbol should have correct name"
-        );
+        assert_some!(found);
+        assert_eq!(found.unwrap().name, "test_symbol");
     }
 
     #[test]
@@ -62,6 +60,6 @@ mod tests {
 
         let symbol = namespace.get_symbol("nonexistent");
 
-        assert!(symbol.is_none(), "Should not find nonexistent symbol");
+        assert_none!(symbol);
     }
 }
