@@ -8,7 +8,7 @@ pub fn construct_namespaces(
     crate_name: &str,
 ) -> Vec<Namespace> {
     let mut namespace_map: HashMap<String, Namespace> = HashMap::new();
-
+    let crate_name = crate_name.replace("-", "_");
     // Group symbols by namespace
     symbol_resolution
         .symbols
@@ -166,6 +166,29 @@ mod tests {
             get_namespace(&format!("{}::outer::inner", STUB_CRATE_NAME), &namespaces).unwrap();
         assert_eq!(outer_namespace.symbols, vec![symbol.clone()]);
         assert_eq!(inner_namespace.symbols, vec![symbol]);
+    }
+
+    #[test]
+    fn hypenated_crate_name() {
+        let crate_name = "test-crate";
+        let symbol = stub_symbol_with_name(STUB_SYMBOL_NAME);
+        let resolved_symbols = vec![ResolvedSymbol {
+            symbol: symbol.clone(),
+            modules: vec![String::new()],
+        }];
+
+        let namespaces = construct_namespaces(
+            SymbolResolution {
+                symbols: resolved_symbols,
+                doc_comments: HashMap::new(),
+            },
+            crate_name,
+        );
+
+        assert_eq!(namespaces.len(), 1);
+        let final_crate_name = crate_name.replace("-", "_");
+        let root = get_namespace(&final_crate_name, &namespaces).unwrap();
+        assert_eq!(root.name, final_crate_name);
     }
 
     #[test]
