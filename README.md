@@ -1,23 +1,34 @@
 # laibrary
 
-**laibrary** provides AI coding assistants with public APIs and documentation from dependencies.
+_laibrary_ extracts public API documentation from a library and outputs it in an LLM-friendly format.
+**The endgame is to provide AI coding agents with all the context they need to use a particular dependency**,
+but for now you can just use it manually on the CLI.
 
-## Usage
+This project was inspired by [Aider's _repository map_](https://aider.chat/docs/repomap.html).
 
-To run the CLI tool:
+## Features
+
+- Outputs public symbols (e.g. functions) only.
+- Outputs function signatures and documentation, but not the implementation.
+- Only supports Rust for now, but [any language supported by tree-sitter](https://github.com/tree-sitter/tree-sitter/wiki/List-of-parsers) can be supported.
+- Reads the source code directly, so it doesn't process the HTML of the generated documentation, thus keeping the output clean.
+
+## CLI Usage
+
+To extract the documentation from a library, pass the name of the language and the path to the library. For example:
 
 ```sh
-cargo run -- /path/to/library
+laibrary rust /path/to/library
 ```
 
-You can also use it as a library:
+## Library Usage
 
 ```rust
-use laibrary::generate_library_api;
+use laibrary::generate_documentation;
 use std::path::Path;
 
-let path = Path::new("/path/to/library");
-match generate_library_api(&path) {
+let path = Path::new("/path/to/crate");
+match generate_documentation("rust", &path) {
     Ok(output) => println!("{}", output),
     Err(e) => eprintln!("Error: {}", e),
 }
