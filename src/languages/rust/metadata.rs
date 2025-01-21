@@ -1,6 +1,6 @@
 use crate::error::LaibraryError;
 use crate::types::PackageMetadata;
-use serde::{Deserialize, Serialize};
+use serde::{de::Error, Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
 
@@ -10,7 +10,27 @@ const README_PATH: &str = "README.md";
 #[derive(Debug, Deserialize, Serialize)]
 struct PackageConfig {
     name: String,
+    #[serde(default, deserialize_with = "deserialize_version")]
     version: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum VersionField {
+    Direct(Option<String>),
+    #[serde(rename = "workspace")]
+    Workspace(serde::de::IgnoredAny),
+}
+
+fn deserialize_version<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    match VersionField::deserialize(deserializer) {
+        Ok(VersionField::Direct(version)) => Ok(version),
+        Ok(VersionField::Workspace(_)) => Ok(None),
+        Err(e) => Err(D::Error::custom(format!("Malformed version field: {}", e))),
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -147,6 +167,22 @@ mod tests {
 
         assert!(result.is_ok());
         assert_eq!(result.unwrap().documentation, "");
+    }
+
+    #[test]
+    fn workspace_version() {
+        let temp_dir = TempDir::new().unwrap();
+        let cargo_toml = r#"
+[package]
+name = "test-crate"
+version.workspace = true
+"#;
+        fs::write(temp_dir.path().join("Cargo.toml"), cargo_toml).unwrap();
+        fs::write(temp_dir.path().join(README_PATH), "Test crate").unwrap();
+
+        let metadata = extract_metadata(temp_dir.path()).unwrap();
+
+        assert_eq!(metadata.version, None);
     }
 
     mod entrypoint {
