@@ -7,31 +7,29 @@ pub fn construct_namespaces(
     symbol_resolution: SymbolResolution,
     crate_name: &str,
 ) -> Vec<Namespace> {
-    let mut namespace_map: HashMap<String, Namespace> = HashMap::new();
+    let mut namespace_by_path: HashMap<String, Namespace> = HashMap::new();
     let crate_name = crate_name.replace("-", "_");
-    // Group symbols by namespace
-    symbol_resolution
-        .symbols
-        .iter()
-        .for_each(|resolved_symbol| {
-            resolved_symbol.modules.iter().for_each(|module_path| {
-                let namespace_name = if module_path.is_empty() {
-                    crate_name.to_string()
-                } else {
-                    format!("{}::{}", crate_name, module_path)
-                };
-                let namespace = namespace_map
-                    .entry(namespace_name.clone())
-                    .or_insert_with(|| Namespace {
-                        name: namespace_name,
-                        symbols: Vec::new(),
-                        doc_comment: symbol_resolution.doc_comments.get(module_path).cloned(),
-                    });
-                namespace.symbols.push(resolved_symbol.symbol.clone());
-            });
-        });
 
-    namespace_map.into_values().collect()
+    // Group symbols by namespace
+    for resolved_symbol in &symbol_resolution.symbols {
+        for module_path in &resolved_symbol.modules {
+            let namespace_name = if module_path.is_empty() {
+                crate_name.to_string()
+            } else {
+                format!("{}::{}", crate_name, module_path)
+            };
+            let namespace = namespace_by_path
+                .entry(namespace_name.clone())
+                .or_insert_with(|| Namespace {
+                    name: namespace_name,
+                    symbols: Vec::new(),
+                    doc_comment: symbol_resolution.doc_comments.get(module_path).cloned(),
+                });
+            namespace.symbols.push(resolved_symbol.symbol.clone());
+        }
+    }
+
+    namespace_by_path.into_values().collect()
 }
 
 #[cfg(test)]
