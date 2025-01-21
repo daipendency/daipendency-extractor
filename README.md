@@ -10,7 +10,7 @@ To run the CLI tool:
 cargo run -- /path/to/library
 ```
 
-You can also use **laibrary** as a library:
+You can also use it as a library:
 
 ```rust
 use laibrary::generate_library_api;
@@ -26,7 +26,3 @@ match generate_library_api(&path) {
 ## Supported Languages
 
 - [Rust](src/languages/rust/README.md).
-- TypeScript (planned):
-  - JSDoc and TSDoc comments (`/** ... */`).
-  - Public API declarations (`.d.ts` files).
-  - Project documentation (`.md` and `.txt` files).
