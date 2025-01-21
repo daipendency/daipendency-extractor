@@ -33,7 +33,3 @@ match generate_documentation("rust", &path) {
     Err(e) => eprintln!("Error: {}", e),
 }
 ```
-
-## Supported Languages
-
-- [Rust](src/languages/rust/README.md).
