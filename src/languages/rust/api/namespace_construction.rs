@@ -29,7 +29,13 @@ pub fn construct_namespaces(
         }
     }
 
-    namespace_by_path.into_values().collect()
+    let mut namespaces: Vec<_> = namespace_by_path.into_values().collect();
+    namespaces.sort_by(|a, b| {
+        let a_components = a.name.matches("::").count();
+        let b_components = b.name.matches("::").count();
+        a_components.cmp(&b_components).then(a.name.cmp(&b.name))
+    });
+    namespaces
 }
 
 #[cfg(test)]
@@ -208,5 +214,62 @@ mod tests {
         assert_eq!(namespaces.len(), 1);
         let root = get_namespace(STUB_CRATE_NAME, &namespaces).unwrap();
         assert_eq!(root.doc_comment, Some(doc_comment.to_string()));
+    }
+
+    mod sorting {
+        use super::*;
+
+        #[test]
+        fn children() {
+            let resolved_symbols = vec![
+                ResolvedSymbol {
+                    symbol: stub_symbol_with_name("test1"),
+                    modules: vec![String::new()],
+                },
+                ResolvedSymbol {
+                    symbol: stub_symbol_with_name("test2"),
+                    modules: vec!["error".to_string()],
+                },
+            ];
+
+            let namespaces = construct_namespaces(
+                SymbolResolution {
+                    symbols: resolved_symbols,
+                    doc_comments: HashMap::new(),
+                },
+                STUB_CRATE_NAME,
+            );
+
+            let names: Vec<_> = namespaces.iter().map(|n| n.name.as_str()).collect();
+            assert_eq!(names, vec!["test_crate", "test_crate::error",]);
+        }
+
+        #[test]
+        fn siblings() {
+            let resolved_symbols = vec![
+                ResolvedSymbol {
+                    symbol: stub_symbol_with_name("test1"),
+                    modules: vec!["submodule1".to_string()],
+                },
+                ResolvedSymbol {
+                    symbol: stub_symbol_with_name("test2"),
+                    modules: vec!["submodule".to_string()],
+                },
+            ];
+
+            let namespaces = construct_namespaces(
+                SymbolResolution {
+                    symbols: resolved_symbols,
+                    doc_comments: HashMap::new(),
+                },
+                STUB_CRATE_NAME,
+            );
+
+            let names: Vec<_> = namespaces.iter().map(|n| n.name.as_str()).collect();
+            assert_eq!(
+                names,
+                vec!["test_crate::submodule", "test_crate::submodule1",]
+            );
+        }
     }
 }
