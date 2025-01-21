@@ -1,6 +1,6 @@
 # laibrary
 
-**laibrary** extracts public APIs and documentation from external libraries, so that AI coding assistants can pass them on as context to the language model.
+**laibrary** provides AI coding assistants with public APIs and documentation from dependencies.
 
 ## Usage
 

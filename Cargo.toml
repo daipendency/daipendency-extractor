@@ -2,6 +2,9 @@
 name = "laibrary"
 version = "0.1.0"
 edition = "2021"
+description = "Provides AI coding assistants with public APIs and documentation from dependencies."
+license = "MIT"
+authors = ["Gus Narea"]
 
 [build-dependencies]
 cc = "1.2.6"
