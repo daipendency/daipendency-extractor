@@ -1,6 +1,6 @@
 # laibrary
 
-**laibrary** extracts public APIs and documentation from external libraries and outputs them in a structured pseudo-XML format suitable for use with language models.
+**laibrary** extracts public APIs and documentation from external libraries, so that AI coding assistants can pass them on as context to the language model.
 
 ## Usage
 
