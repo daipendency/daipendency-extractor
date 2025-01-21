@@ -28,7 +28,7 @@ library_version: {version}
 fn format_namespaces_content(namespaces: &[Namespace], language: &str) -> String {
     namespaces
         .iter()
-        .filter(|n| !n.symbols.is_empty() || !n.missing_symbols.is_empty())
+        .filter(|n| !n.symbols.is_empty())
         .map(|n| format_namespace_content(n, language))
         .collect::<Vec<_>>()
         .join("\n")
@@ -52,16 +52,6 @@ fn format_namespace_content(namespace: &Namespace, language: &str) -> String {
                 .join("\n\n"),
         );
         content.push_str(&format!("```{}\n{}\n```\n", language, code_block));
-    }
-
-    if !namespace.missing_symbols.is_empty() {
-        content.push_str("\n### Missing Symbols\n\n");
-        content.push_str("The following symbols could not be resolved:\n\n");
-        content.push_str("```text\n");
-        for symbol in &namespace.missing_symbols {
-            content.push_str(&format!("- {}\n", symbol.name));
-        }
-        content.push_str("```\n");
     }
 
     content
@@ -161,13 +151,11 @@ mod tests {
         fn create_namespace(
             name: &str,
             symbols: Vec<Symbol>,
-            missing_symbols: Vec<Symbol>,
             doc_comment: Option<&str>,
         ) -> Namespace {
             Namespace {
                 name: name.to_string(),
                 symbols,
-                missing_symbols,
                 doc_comment: doc_comment.map(String::from),
             }
         }
@@ -197,7 +185,7 @@ mod tests {
         #[test]
         fn single_namespace() {
             let symbol = create_symbol("symbol", STUB_SOURCE_CODE);
-            let namespace = create_namespace("test", vec![symbol], vec![], None);
+            let namespace = create_namespace("test", vec![symbol], None);
             let namespace_name = namespace.name.clone();
 
             let documentation =
@@ -217,13 +205,11 @@ mod tests {
             let namespace1 = create_namespace(
                 "test1",
                 vec![create_symbol("symbol1", STUB_SOURCE_CODE)],
-                vec![],
                 None,
             );
             let namespace2 = create_namespace(
                 "test2",
                 vec![create_symbol("symbol2", STUB_SOURCE_CODE)],
-                vec![],
                 None,
             );
 
@@ -249,7 +235,7 @@ mod tests {
 
             #[test]
             fn namespace_without_symbols() {
-                let namespace = create_namespace("test", vec![], vec![], None);
+                let namespace = create_namespace("test", vec![], None);
                 let documentation =
                     format_library_context(&create_metadata(), &[namespace], STUB_LANGUAGE)
                         .unwrap();
@@ -261,7 +247,6 @@ mod tests {
                 let namespace = create_namespace(
                     "test",
                     vec![create_symbol("symbol", STUB_SOURCE_CODE)],
-                    vec![],
                     None,
                 );
 
@@ -282,7 +267,6 @@ mod tests {
                         create_symbol("symbol1", "FIRST"),
                         create_symbol("symbol2", "SECOND"),
                     ],
-                    vec![],
                     None,
                 );
 
@@ -300,7 +284,6 @@ mod tests {
                 let namespace = create_namespace(
                     "test",
                     vec![create_symbol("symbol", STUB_SOURCE_CODE)],
-                    vec![],
                     None,
                 );
 
@@ -318,7 +301,6 @@ mod tests {
                 let namespace = create_namespace(
                     "test",
                     vec![create_symbol("symbol", STUB_MULTI_LINE_SOURCE_CODE)],
-                    vec![],
                     None,
                 );
 
@@ -332,47 +314,10 @@ mod tests {
             }
 
             #[test]
-            fn missing_symbols() {
-                let namespace = create_namespace(
-                    "test",
-                    vec![],
-                    vec![create_symbol("missing", "pub fn missing() {}")],
-                    None,
-                );
-
-                let documentation =
-                    format_library_context(&create_metadata(), &[namespace], STUB_LANGUAGE)
-                        .unwrap();
-
-                assert_contains!(documentation, "### Missing Symbols\n\n");
-                assert_contains!(documentation, "```text\n- missing\n```");
-            }
-
-            #[test]
-            fn both_present_and_missing_symbols() {
-                let namespace = create_namespace(
-                    "test",
-                    vec![create_symbol("present", "pub fn present() {}")],
-                    vec![create_symbol("missing", "pub fn missing() {}")],
-                    None,
-                );
-
-                let documentation =
-                    format_library_context(&create_metadata(), &[namespace], STUB_LANGUAGE)
-                        .unwrap();
-
-                assert_contains!(documentation, &format!("```{}\n", STUB_LANGUAGE));
-                assert_contains!(documentation, "pub fn present()");
-                assert_contains!(documentation, "### Missing Symbols\n\n");
-                assert_contains!(documentation, "```text\n- missing\n```");
-            }
-
-            #[test]
             fn namespace_without_doc_comment() {
                 let namespace = create_namespace(
                     "test",
                     vec![create_symbol("symbol", STUB_SOURCE_CODE)],
-                    vec![],
                     None,
                 );
 
@@ -391,7 +336,6 @@ mod tests {
                 let namespace = create_namespace(
                     "test",
                     vec![create_symbol("symbol", STUB_SOURCE_CODE)],
-                    vec![],
                     Some(STUB_DOC_COMMENT),
                 );
 

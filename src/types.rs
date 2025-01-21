@@ -10,7 +10,6 @@ pub struct PackageMetadata {
 pub struct Namespace {
     pub name: String,
     pub symbols: Vec<Symbol>,
-    pub missing_symbols: Vec<Symbol>,
     pub doc_comment: Option<String>,
 }
 
@@ -40,7 +39,6 @@ mod tests {
         let namespace = Namespace {
             name: "test_namespace".to_string(),
             symbols: vec![symbol],
-            missing_symbols: vec![],
             doc_comment: None,
         };
 
@@ -59,31 +57,11 @@ mod tests {
         let namespace = Namespace {
             name: "test_namespace".to_string(),
             symbols: vec![],
-            missing_symbols: vec![],
             doc_comment: None,
         };
 
         let symbol = namespace.get_symbol("nonexistent");
 
         assert!(symbol.is_none(), "Should not find nonexistent symbol");
-    }
-
-    #[test]
-    fn get_missing_symbol() {
-        let symbol_name = "missing_symbol".to_string();
-        let symbol = Symbol {
-            name: symbol_name.clone(),
-            source_code: "fn missing() {}".to_string(),
-        };
-        let namespace = Namespace {
-            name: "test_namespace".to_string(),
-            symbols: vec![],
-            missing_symbols: vec![symbol],
-            doc_comment: None,
-        };
-
-        let symbol_found = namespace.get_symbol(&symbol_name);
-
-        assert!(symbol_found.is_none());
     }
 }

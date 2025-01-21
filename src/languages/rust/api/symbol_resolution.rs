@@ -107,11 +107,16 @@ fn resolve_public_symbols(
                 .cloned()
                 .collect();
         } else {
-            return Err(LaibraryError::Parse(format!(
-                "Could not resolve symbol reference '{}' in {}",
-                source_path,
-                referencing_modules.join(", ")
-            )));
+            // The symbol can't be found in the codebase, so it's likely to be a dependency
+            let symbol_name = source_path.split("::").last().unwrap();
+            let resolved_symbol = ResolvedSymbol {
+                symbol: Symbol {
+                    name: symbol_name.to_string(),
+                    source_code: format!("pub use {};", source_path),
+                },
+                modules: referencing_modules.clone(),
+            };
+            resolved_symbols.insert(source_path.to_string(), resolved_symbol);
         }
     }
 
@@ -357,20 +362,24 @@ mod tests {
 
         #[test]
         fn missing_reference() {
+            let reference_source_code = "missing::test";
             let modules = vec![Module {
                 name: "outer".to_string(),
                 definitions: Vec::new(),
-                references: vec![Reference::Symbol("missing::test".to_string())],
+                references: vec![Reference::Symbol(reference_source_code.to_string())],
                 is_public: true,
                 doc_comment: None,
             }];
 
-            let result = resolve_symbols(&modules);
+            let result = resolve_symbols(&modules).unwrap();
 
-            assert!(matches!(
-                result,
-                Err(LaibraryError::Parse(msg)) if msg == "Could not resolve symbol reference 'missing::test' in outer"
-            ));
+            assert_eq!(result.symbols.len(), 1);
+            let resolved_symbol = result.symbols[0].clone();
+            assert_eq!(
+                resolved_symbol.symbol.source_code,
+                format!("pub use {};", reference_source_code)
+            );
+            assert_set_eq!(resolved_symbol.modules, vec!["outer".to_string()]);
         }
 
         #[test]

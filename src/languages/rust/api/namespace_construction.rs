@@ -25,7 +25,6 @@ pub fn construct_namespaces(
                     .or_insert_with(|| Namespace {
                         name: namespace_name,
                         symbols: Vec::new(),
-                        missing_symbols: Vec::new(),
                         doc_comment: symbol_resolution.doc_comments.get(module_path).cloned(),
                     });
                 namespace.symbols.push(resolved_symbol.symbol.clone());
