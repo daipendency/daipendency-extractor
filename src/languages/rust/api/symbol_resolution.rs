@@ -108,8 +108,9 @@ fn resolve_public_symbols(
                 .collect();
         } else {
             return Err(LaibraryError::Parse(format!(
-                "Could not resolve symbol reference '{}'",
-                source_path
+                "Could not resolve symbol reference '{}' in {}",
+                source_path,
+                referencing_modules.join(", ")
             )));
         }
     }
@@ -357,7 +358,7 @@ mod tests {
         #[test]
         fn missing_reference() {
             let modules = vec![Module {
-                name: String::new(),
+                name: "outer".to_string(),
                 definitions: Vec::new(),
                 references: vec![Reference::Symbol("missing::test".to_string())],
                 is_public: true,
@@ -368,7 +369,7 @@ mod tests {
 
             assert!(matches!(
                 result,
-                Err(LaibraryError::Parse(msg)) if msg == "Could not resolve symbol reference 'missing::test'"
+                Err(LaibraryError::Parse(msg)) if msg == "Could not resolve symbol reference 'missing::test' in outer"
             ));
         }
 
