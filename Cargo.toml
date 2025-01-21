@@ -1,8 +1,8 @@
 [package]
-name = "laibrary"
-version = "0.1.1"
+name = "daipendency-extractor"
+version = "1.0.0"
 edition = "2021"
-description = "Provides AI coding assistants with public APIs and documentation from dependencies."
+description = "Core library for Daipendency extractors"
 license = "MIT"
 authors = ["Gus Narea"]
 
@@ -10,12 +10,8 @@ authors = ["Gus Narea"]
 cc = "1.2.6"
 
 [dependencies]
-serde = { version = "1.0.217", features = ["derive"] }
-toml = "0.8.19"
 tree-sitter = "0.24.6"
-tree-sitter-rust = "0.23.2"
 walkdir = "2.4.0"
 
 [dev-dependencies]
 assertables = "9.5.0"
-tempfile = "3.10.0"
