@@ -5,12 +5,14 @@ use tree_sitter::{Node, Parser};
 mod doc_comments;
 mod files;
 mod helpers;
+mod macros;
 mod symbol_reexports;
 mod symbols;
 mod test_helpers;
 
 use doc_comments::extract_inner_doc_comments;
 use helpers::{extract_name, get_declaration_list, is_public};
+use macros::get_macro_source_code;
 use symbol_reexports::extract_symbol_reexports;
 use symbols::get_symbol_source_code;
 
@@ -38,7 +40,7 @@ fn extract_symbols_from_module(
 
     for child in module_node.children(&mut cursor) {
         match child.kind() {
-            "function_item" | "struct_item" | "enum_item" | "trait_item" | "macro_definition" => {
+            "function_item" | "struct_item" | "enum_item" | "trait_item" => {
                 if !is_public(&child) {
                     continue;
                 }
@@ -49,6 +51,18 @@ fn extract_symbols_from_module(
                         source_code: get_symbol_source_code(child, source_code)?,
                     },
                 });
+            }
+            "macro_definition" => {
+                let source_code_opt = get_macro_source_code(child, source_code)?;
+                if let Some(macro_source_code) = source_code_opt {
+                    let name = extract_name(&child, source_code)?;
+                    symbols.push(RustSymbol::Symbol {
+                        symbol: Symbol {
+                            name,
+                            source_code: macro_source_code,
+                        },
+                    });
+                }
             }
             "use_declaration" => {
                 symbols.extend(extract_symbol_reexports(&child, source_code)?);
@@ -139,6 +153,28 @@ pub fn test_function() -> i32 {
             panic!("Expected a symbol")
         };
         assert_eq!(symbol.source_code, "pub fn test_function() -> i32;");
+    }
+
+    #[test]
+    fn macro_declaration() {
+        let source_code = r#"
+#[macro_export]
+macro_rules! test_macro {
+    () => { println!("Hello, world!"); }
+}
+"#;
+        let mut parser = setup_parser();
+
+        let rust_file = parse_rust_file(source_code, &mut parser).unwrap();
+
+        let symbol = rust_file.get_symbol("test_macro").unwrap();
+        let RustSymbol::Symbol { symbol } = symbol else {
+            panic!("Expected a symbol")
+        };
+        assert_eq!(
+            symbol.source_code,
+            "#[macro_export]\nmacro_rules! test_macro;"
+        );
     }
 
     #[test]
