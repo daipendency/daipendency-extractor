@@ -1,44 +1,32 @@
 # laibrary
 
-Generate context for LLMs to work reliably with library APIs.
+**laibrary** extracts public APIs and documentation from external libraries, so that AI coding assistants can pass them on as context to the language model.
 
-## Input Sources
+## Usage
 
-### Rust
+To run the CLI tool:
 
-- Doc comments (`///` and `//!`) with Markdown support.
-- The `README.md` file of the crate.
-- Public API signatures and types.
-- Additional Markdown files via `#[doc = include_str!("path/to/doc.md")]`.
-
-### TypeScript
-
-- JSDoc and TSDoc comments (`/** ... */`).
-- The `README.md` file of the project.
-- Public API declarations (`.d.ts` files).
-- Additional documentation files (`.md` and `.txt` files).
-
-## Output format
-
-```xml
-<library name="the-library" version="1.0.0">
-    <documentation>
-        # The Library
-
-        This is a library that does something.
-    </documentation>
-    <api>
-        <![CDATA[
-        /// Entry point for the laibrary CLI tool.
-        fn main() -> Result<(), Box<dyn Error>>
-        ]]>
-    </api>
-    <examples>
-        <example>
-            <![CDATA[
-            // Example usage of the library.
-            ]]>
-        </example>
-    </examples>
-</library>
+```sh
+cargo run -- /path/to/library
 ```
+
+You can also use **laibrary** as a library:
+
+```rust
+use laibrary::generate_library_api;
+use std::path::Path;
+
+let path = Path::new("/path/to/library");
+match generate_library_api(&path) {
+    Ok(output) => println!("{}", output),
+    Err(e) => eprintln!("Error: {}", e),
+}
+```
+
+## Supported Languages
+
+- [Rust](src/languages/rust/README.md).
+- TypeScript (planned):
+  - JSDoc and TSDoc comments (`/** ... */`).
+  - Public API declarations (`.d.ts` files).
+  - Project documentation (`.md` and `.txt` files).

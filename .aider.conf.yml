@@ -1,8 +1,6 @@
 read:
-  - README.md
-
-lint-cmd:
-  - cargo fmt
+- README.md
+- .cursorrules
 
 auto-test: true
 test-cmd: cargo test
