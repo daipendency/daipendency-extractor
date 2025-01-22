@@ -9,5 +9,9 @@ pub struct LibraryMetadata {
 }
 
 #[derive(Error, Debug)]
-#[error("{0}")]
-pub struct LibraryMetadataError(pub String);
+pub enum LibraryMetadataError {
+    #[error(transparent)]
+    MissingManifest(#[from] std::io::Error),
+    #[error("{0}")]
+    MalformedManifest(String),
+}
