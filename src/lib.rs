@@ -6,6 +6,6 @@ mod types;
 
 pub use error::ExtractionError;
 pub use extractor::Extractor;
-pub use library_metadata::LibraryMetadata;
+pub use library_metadata::{LibraryMetadata, LibraryMetadataError};
 pub use parsing::{get_parser, ParserError};
 pub use types::{Namespace, Symbol};
