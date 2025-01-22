@@ -1,12 +1,6 @@
-/// Custom error type for laibrary operations
+/// Custom error type for Daipendency extraction operations
 #[derive(Debug)]
-pub enum LaibraryError {
-    /// I/O related errors
-    Io(std::io::Error),
+pub enum ExtractionError {
     /// Parsing related errors
     Parse(String),
-    /// Unsupported language errors
-    UnsupportedLanguage(String),
-    /// Invalid path errors
-    InvalidPath(String),
 }

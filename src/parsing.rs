@@ -1,11 +1,11 @@
-use crate::error::LaibraryError;
+use crate::error::ExtractionError;
 use tree_sitter::{Language, Parser};
 
-pub fn get_parser(parser_language: &Language) -> Result<Parser, LaibraryError> {
+pub fn get_parser(parser_language: &Language) -> Result<Parser, ExtractionError> {
     let mut parser = Parser::new();
     parser
         .set_language(parser_language)
-        .map_err(|e| LaibraryError::Parse(format!("Error setting language for parser: {}", e)))?;
+        .map_err(|e| ExtractionError::Parse(format!("Error setting language for parser: {}", e)))?;
     Ok(parser)
 }
 
