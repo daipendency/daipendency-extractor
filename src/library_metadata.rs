@@ -10,4 +10,4 @@ pub struct LibraryMetadata {
 
 #[derive(Error, Debug)]
 #[error("{0}")]
-pub struct LibraryMetadataError(String);
+pub struct LibraryMetadataError(pub String);
