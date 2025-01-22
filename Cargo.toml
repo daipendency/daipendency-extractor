@@ -3,6 +3,9 @@ name = "daipendency-extractor"
 version = "1.0.2"
 edition = "2021"
 description = "Core library for Daipendency extractors"
+repository = "https://github.com/daipendency/daipendency-extractor"
+homepage = "https://github.com/daipendency/daipendency-extractor"
+documentation = "https://docs.rs/daipendency-extractor"
 license = "MIT"
 authors = ["Gus Narea"]
 
