@@ -1,9 +1,11 @@
-mod extractor;
 mod error;
+mod extractor;
+mod library_metadata;
 mod parsing;
 mod types;
 
-pub use extractor::Extractor;
 pub use error::ExtractionError;
-pub use parsing::get_parser;
-pub use types::{Namespace, PackageMetadata, Symbol};
+pub use extractor::Extractor;
+pub use library_metadata::LibraryMetadata;
+pub use parsing::{get_parser, ParserError};
+pub use types::{Namespace, Symbol};

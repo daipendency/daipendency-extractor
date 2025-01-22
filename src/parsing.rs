@@ -1,11 +1,13 @@
-use crate::error::ExtractionError;
-use tree_sitter::{Language, Parser};
+use thiserror::Error;
+use tree_sitter::{Language, LanguageError, Parser};
 
-pub fn get_parser(parser_language: &Language) -> Result<Parser, ExtractionError> {
+#[derive(Error, Debug)]
+#[error(transparent)]
+pub struct ParserError(#[from] LanguageError);
+
+pub fn get_parser(parser_language: &Language) -> Result<Parser, ParserError> {
     let mut parser = Parser::new();
-    parser
-        .set_language(parser_language)
-        .map_err(|e| ExtractionError::Parse(format!("Error setting language for parser: {}", e)))?;
+    parser.set_language(parser_language).map_err(ParserError)?;
     Ok(parser)
 }
 

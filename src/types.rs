@@ -1,12 +1,4 @@
 #[derive(Debug)]
-pub struct PackageMetadata {
-    pub name: String,
-    pub version: Option<String>,
-    pub documentation: String,
-    pub entry_point: std::path::PathBuf,
-}
-
-#[derive(Debug)]
 pub struct Namespace {
     pub name: String,
     pub symbols: Vec<Symbol>,
