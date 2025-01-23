@@ -12,8 +12,8 @@ pub enum ExtractionError {
 /// Error whilst resolving a dependency path
 #[derive(Error, Debug)]
 pub enum DependencyResolutionError {
-    #[error(transparent)]
-    Io(#[from] std::io::Error),
+    #[error("Failed to retrieve dependency: {0}")]
+    RetrievalFailure(String),
     #[error("'{0}' is not a dependency")]
     MissingDependency(String),
 }
