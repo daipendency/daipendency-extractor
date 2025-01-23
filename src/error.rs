@@ -8,3 +8,12 @@ pub enum ExtractionError {
     #[error("{0}")]
     Malformed(String),
 }
+
+/// Error whilst resolving a dependency path
+#[derive(Error, Debug)]
+pub enum DependencyResolutionError {
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
+    #[error("'{0}' is not a dependency")]
+    MissingDependency(String),
+}
