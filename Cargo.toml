@@ -14,7 +14,7 @@ cc = "1.2.6"
 
 [dependencies]
 thiserror = "2.0.11"
-tree-sitter = "0.24.6"
+tree-sitter = "0.25.2"
 walkdir = "2.4.0"
 
 [dev-dependencies]
