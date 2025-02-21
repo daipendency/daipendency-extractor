@@ -4,17 +4,21 @@ use crate::types::Namespace;
 use std::path::{Path, PathBuf};
 use tree_sitter::{Language, Parser};
 
-pub trait Extractor {
+/// Extract metadata and public API information from a library.
+pub trait Extractor<EntryPoint> {
     /// Provide the TreeSitter language
     fn get_parser_language(&self) -> Language;
 
     /// Provide the library metadata
-    fn get_library_metadata(&self, path: &Path) -> Result<LibraryMetadata, LibraryMetadataError>;
+    fn get_library_metadata(
+        &self,
+        path: &Path,
+    ) -> Result<LibraryMetadata<EntryPoint>, LibraryMetadataError>;
 
     /// Extract the public API
     fn extract_public_api(
         &self,
-        metadata: &LibraryMetadata,
+        metadata: &LibraryMetadata<EntryPoint>,
         parser: &mut Parser,
     ) -> Result<Vec<Namespace>, ExtractionError>;
 
