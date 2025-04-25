@@ -1,11 +1,11 @@
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Namespace {
     pub name: String,
     pub symbols: Vec<Symbol>,
     pub doc_comment: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Symbol {
     pub name: String,
     pub source_code: String,
